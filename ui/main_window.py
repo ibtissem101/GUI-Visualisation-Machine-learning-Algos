@@ -1,183 +1,167 @@
-"""
-Main window for the PyQt6 application.
-"""
-from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QLineEdit, QTextEdit, QMenuBar,
-    QStatusBar, QToolBar
-)
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QAction, QIcon
+import customtkinter as ctk
+import tkinter as tk
+import pandas as pd
+import os
 
+# Import pages
+from ui.pages.data_loader import DataLoaderPage
+from ui.pages.kmeans import KMeansPage
+from ui.pages.kmedoids import KMedoidsPage
+from ui.pages.hierarchical import HierarchicalPage
+from ui.pages.dbscan import DBSCANPage
+from ui.pages.eda import EDAPage
 
-class MainWindow(QMainWindow):
-    """Main application window."""
-    
+# Set theme
+ctk.set_appearance_mode("Light")
+ctk.set_default_color_theme("blue")
+
+class MainWindow(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PyQt6 Application")
-        self.setMinimumSize(800, 600)
+        self.df = None
+        self.file_path = None
+        self.current_page = None
         
-        # Initialize UI components
-        self._create_menu_bar()
-        self._create_toolbar()
-        self._create_central_widget()
-        self._create_status_bar()
+        self.title("Clustering Tool")
+        self.geometry("1380x800")
+        self.configure(fg_color="#F5F5F5")
         
-    def _create_menu_bar(self):
-        """Create the menu bar."""
-        menubar = self.menuBar()
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
         
-        # File menu
-        file_menu = menubar.addMenu("&File")
+        self.setup_ui()
         
-        new_action = QAction("&New", self)
-        new_action.setShortcut("Ctrl+N")
-        new_action.triggered.connect(self.on_new)
-        file_menu.addAction(new_action)
+    def setup_ui(self):
+        # Sidebar
+        self.sidebar = self.create_sidebar()
+        self.sidebar.grid(row=0, column=0, sticky="nsew")
         
-        open_action = QAction("&Open", self)
-        open_action.setShortcut("Ctrl+O")
-        open_action.triggered.connect(self.on_open)
-        file_menu.addAction(open_action)
+        # Content Container
+        self.content_container = ctk.CTkFrame(self, fg_color="#F5F5F5", corner_radius=0)
+        self.content_container.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
         
-        file_menu.addSeparator()
+        # Initial Page
+        self.show_page("data_loader")
         
-        exit_action = QAction("E&xit", self)
-        exit_action.setShortcut("Ctrl+Q")
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
+    def create_sidebar(self):
+        sidebar = ctk.CTkFrame(self, width=200, corner_radius=0, fg_color="#FAFAFA")
+        sidebar.grid_propagate(False)
         
-        # Edit menu
-        edit_menu = menubar.addMenu("&Edit")
-        
-        copy_action = QAction("&Copy", self)
-        copy_action.setShortcut("Ctrl+C")
-        edit_menu.addAction(copy_action)
-        
-        paste_action = QAction("&Paste", self)
-        paste_action.setShortcut("Ctrl+V")
-        edit_menu.addAction(paste_action)
-        
-        # Help menu
-        help_menu = menubar.addMenu("&Help")
-        
-        about_action = QAction("&About", self)
-        about_action.triggered.connect(self.on_about)
-        help_menu.addAction(about_action)
-        
-    def _create_toolbar(self):
-        """Create the toolbar."""
-        toolbar = QToolBar("Main Toolbar")
-        toolbar.setIconSize(QSize(16, 16))
-        self.addToolBar(toolbar)
-        
-        # Add actions to toolbar
-        new_button = QAction("New", self)
-        new_button.triggered.connect(self.on_new)
-        toolbar.addAction(new_button)
-        
-        open_button = QAction("Open", self)
-        open_button.triggered.connect(self.on_open)
-        toolbar.addAction(open_button)
-        
-        toolbar.addSeparator()
-        
-        save_button = QAction("Save", self)
-        save_button.triggered.connect(self.on_save)
-        toolbar.addAction(save_button)
-        
-    def _create_central_widget(self):
-        """Create the central widget with main content."""
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        
-        # Main layout
-        layout = QVBoxLayout()
-        central_widget.setLayout(layout)
-        
-        # Title label
-        title = QLabel("Welcome to PyQt6 Application")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 24px; font-weight: bold; padding: 20px;")
-        layout.addWidget(title)
-        
-        # Input section
-        input_layout = QHBoxLayout()
-        input_label = QLabel("Enter text:")
-        self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("Type something here...")
-        input_layout.addWidget(input_label)
-        input_layout.addWidget(self.input_field)
-        layout.addLayout(input_layout)
-        
-        # Button section
-        button_layout = QHBoxLayout()
-        
-        self.submit_button = QPushButton("Submit")
-        self.submit_button.clicked.connect(self.on_submit)
-        button_layout.addWidget(self.submit_button)
-        
-        self.clear_button = QPushButton("Clear")
-        self.clear_button.clicked.connect(self.on_clear)
-        button_layout.addWidget(self.clear_button)
-        
-        layout.addLayout(button_layout)
-        
-        # Output area
-        output_label = QLabel("Output:")
-        layout.addWidget(output_label)
-        
-        self.output_area = QTextEdit()
-        self.output_area.setReadOnly(True)
-        self.output_area.setPlaceholderText("Output will appear here...")
-        layout.addWidget(self.output_area)
-        
-        # Add stretch to push everything to the top
-        layout.addStretch()
-        
-    def _create_status_bar(self):
-        """Create the status bar."""
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Ready")
-        
-    # Event handlers
-    def on_new(self):
-        """Handle New action."""
-        self.status_bar.showMessage("New file created")
-        self.output_area.clear()
-        self.input_field.clear()
-        
-    def on_open(self):
-        """Handle Open action."""
-        self.status_bar.showMessage("Open file dialog would appear here")
-        
-    def on_save(self):
-        """Handle Save action."""
-        self.status_bar.showMessage("Save file dialog would appear here")
-        
-    def on_about(self):
-        """Handle About action."""
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.about(
-            self,
-            "About PyQt6 Application",
-            "This is a sample PyQt6 application.\n\n"
-            "Built with PyQt6 framework for Python."
+        # Logo
+        logo_label = ctk.CTkLabel(
+            sidebar, 
+            text="Clustering Tool", 
+            font=("Segoe UI", 16, "bold"),
+            text_color="#1E293B",
+            anchor="w"
         )
+        logo_label.pack(padx=20, pady=(20, 0), anchor="w")
         
-    def on_submit(self):
-        """Handle Submit button click."""
-        text = self.input_field.text()
-        if text:
-            self.output_area.append(f"You entered: {text}")
-            self.status_bar.showMessage(f"Processed: {text}")
-        else:
-            self.status_bar.showMessage("Please enter some text first", 3000)
+        subtitle = ctk.CTkLabel(
+            sidebar,
+            text="Data Science Platform",
+            font=("Segoe UI", 11),
+            text_color="#94A3B8",
+            anchor="w"
+        )
+        subtitle.pack(padx=20, pady=(0, 20), anchor="w")
+        
+        # Menu
+        menu_label = ctk.CTkLabel(
+            sidebar,
+            text="MAIN MENU",
+            font=("Segoe UI", 10, "bold"),
+            text_color="#94A3B8",
+            anchor="w"
+        )
+        menu_label.pack(padx=20, pady=(10, 5), anchor="w")
+        
+        self.create_menu_btn(sidebar, "  Data Loader", "data_loader")
+        self.create_menu_btn(sidebar, "  EDA", "eda")
+        
+        # Unsupervised Label
+        ctk.CTkLabel(
+            sidebar,
+            text="▼ Unsupervised\n    Learning",
+            text_color="#1E293B",
+            anchor="w",
+            font=("Segoe UI", 13),
+            justify="left"
+        ).pack(padx=10, pady=5, fill="x")
+        
+        # Submenu
+        self.create_submenu_btn(sidebar, "K-Means", "kmeans")
+        self.create_submenu_btn(sidebar, "K-Medoids", "kmedoids")
+        self.create_submenu_btn(sidebar, "DIANA/AGNES", "hierarchical")
+        self.create_submenu_btn(sidebar, "DBSCAN", "dbscan")
             
-    def on_clear(self):
-        """Handle Clear button click."""
-        self.input_field.clear()
-        self.output_area.clear()
-        self.status_bar.showMessage("Cleared")
+        self.create_menu_btn(sidebar, "📊  Visualization", "viz")
+        
+        # Bottom
+        ctk.CTkFrame(sidebar, fg_color="transparent").pack(expand=True) # Spacer
+        
+        self.create_menu_btn(sidebar, "⚙️  Settings", "settings")
+        self.create_menu_btn(sidebar, "❓  Help", "help")
+        
+        return sidebar
+
+    def create_menu_btn(self, parent, text, page_name):
+        btn = ctk.CTkButton(
+            parent,
+            text=text,
+            fg_color="transparent",
+            text_color="#1E293B",
+            hover_color="#F1F5F9",
+            anchor="w",
+            font=("Segoe UI", 13),
+            height=40,
+            corner_radius=6,
+            command=lambda: self.show_page(page_name)
+        )
+        btn.pack(padx=10, pady=2, fill="x")
+        return btn
+
+    def create_submenu_btn(self, parent, text, page_name):
+        btn = ctk.CTkButton(
+            parent,
+            text=text,
+            fg_color="transparent",
+            text_color="#64748B",
+            hover_color="#F1F5F9",
+            anchor="w",
+            font=("Segoe UI", 13),
+            height=30,
+            command=lambda: self.show_page(page_name)
+        )
+        btn.pack(padx=(30, 10), pady=2, fill="x")
+        return btn
+
+    def show_page(self, page_name):
+        # Clear current page
+        for widget in self.content_container.winfo_children():
+            widget.destroy()
+            
+        if page_name == "data_loader":
+            self.current_page = DataLoaderPage(self.content_container, self)
+        elif page_name == "eda":
+            self.current_page = EDAPage(self.content_container, self)
+        elif page_name == "kmeans":
+            self.current_page = KMeansPage(self.content_container, self)
+        elif page_name == "kmedoids":
+            self.current_page = KMedoidsPage(self.content_container, self)
+        elif page_name == "hierarchical":
+            self.current_page = HierarchicalPage(self.content_container, self)
+        elif page_name == "dbscan":
+            self.current_page = DBSCANPage(self.content_container, self)
+        else:
+            # Placeholder for unimplemented pages
+            self.current_page = ctk.CTkLabel(self.content_container, text=f"Page '{page_name}' not implemented yet.")
+            
+        self.current_page.pack(fill="both", expand=True)
+
+    def set_dataframe(self, df, file_path):
+        self.df = df
+        self.file_path = file_path
+        
+    def get_dataframe(self):
+        return self.df
