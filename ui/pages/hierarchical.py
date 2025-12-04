@@ -163,18 +163,7 @@ class HierarchicalPage(ctk.CTkFrame):
             fg_color="#2D5BFF",
             hover_color="#1E40AF"
         )
-        self.run_btn.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        
-        self.dendro_btn = ctk.CTkButton(
-            btn_frame,
-            text="Show Dendrogram",
-            command=self.show_dendrogram,
-            font=("Segoe UI", 13, "bold"),
-            fg_color="#64748B",
-            hover_color="#475569",
-            height=44
-        )
-        self.dendro_btn.pack(side="right", fill="x", expand=True, padx=(10, 0))
+        self.run_btn.pack(fill="x", expand=True)
         
         self.status_label = ctk.CTkLabel(controls_inner, text="", text_color="#64748B", font=("Segoe UI", 11))
         self.status_label.pack(fill="x", pady=(10, 0))
@@ -187,6 +176,27 @@ class HierarchicalPage(ctk.CTkFrame):
             border_width=1, 
             border_color="#E2E8F0"
         )
+        
+        # Visualization controls at top
+        viz_controls = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
+        viz_controls.pack(fill="x", padx=20, pady=(20, 10))
+        
+        self.dendro_btn = ctk.CTkButton(
+            viz_controls,
+            text="🌳 Show Dendrogram",
+            command=self.show_dendrogram,
+            font=("Segoe UI", 12, "bold"),
+            fg_color="#64748B",
+            hover_color="#475569",
+            height=36,
+            width=180
+        )
+        self.dendro_btn.pack(side="left")
+        
+        # Plot container
+        self.plot_container = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
+        self.plot_container.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        
         # Placeholder for viz
         self.plot_placeholder()
         
@@ -230,9 +240,9 @@ class HierarchicalPage(ctk.CTkFrame):
         ax.set_facecolor('white')
         ax.axis('off')
         
-        self.canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
+        self.canvas = FigureCanvasTkAgg(fig, master=self.plot_container)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def update_feature_options(self, event=None):
         df = self.app.get_dataframe()
@@ -384,6 +394,10 @@ class HierarchicalPage(ctk.CTkFrame):
         self.insights_text.configure(state="disabled")
         
         self.plot_scatter(X, labels, feature_names, linkage_method, sil_score)
+        
+        # Auto-switch to Visualization view to show results
+        self.view_var.set("Visualization")
+        self.switch_view("Visualization")
 
     def _handle_error(self, error_msg):
         self.progress_bar.stop()
@@ -454,9 +468,13 @@ class HierarchicalPage(ctk.CTkFrame):
         
         fig.tight_layout(pad=1.5)
         
-        self.canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
+        self.canvas = FigureCanvasTkAgg(fig, master=self.plot_container)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        
+        # Auto-switch to Visualization view
+        self.view_var.set("Visualization")
+        self.switch_view("Visualization")
 
     def plot_scatter(self, X, labels, feature_names, linkage_method, sil_score):
         if self.canvas:
@@ -475,6 +493,6 @@ class HierarchicalPage(ctk.CTkFrame):
         
         fig.tight_layout(pad=1.5)
         
-        self.canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
+        self.canvas = FigureCanvasTkAgg(fig, master=self.plot_container)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)

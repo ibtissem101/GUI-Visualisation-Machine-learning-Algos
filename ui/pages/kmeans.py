@@ -158,18 +158,7 @@ class KMeansPage(ctk.CTkFrame):
             fg_color="#2D5BFF",
             hover_color="#1E40AF"
         )
-        self.run_btn.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        
-        self.elbow_btn = ctk.CTkButton(
-            btn_frame,
-            text="Show Elbow Method",
-            command=self.show_elbow,
-            font=("Segoe UI", 13, "bold"),
-            fg_color="#64748B",
-            hover_color="#475569",
-            height=44
-        )
-        self.elbow_btn.pack(side="right", fill="x", expand=True, padx=(10, 0))
+        self.run_btn.pack(fill="x", expand=True)
         
         self.status_label = ctk.CTkLabel(controls_inner, text="", text_color="#64748B", font=("Segoe UI", 11))
         self.status_label.pack(fill="x", pady=(10, 0))
@@ -182,6 +171,27 @@ class KMeansPage(ctk.CTkFrame):
             border_width=1, 
             border_color="#E2E8F0"
         )
+        
+        # Visualization controls at top
+        viz_controls = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
+        viz_controls.pack(fill="x", padx=20, pady=(20, 10))
+        
+        self.elbow_btn = ctk.CTkButton(
+            viz_controls,
+            text="📊 Show Elbow Method",
+            command=self.show_elbow,
+            font=("Segoe UI", 12, "bold"),
+            fg_color="#64748B",
+            hover_color="#475569",
+            height=36,
+            width=180
+        )
+        self.elbow_btn.pack(side="left")
+        
+        # Plot container
+        self.plot_container = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
+        self.plot_container.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        
         # Placeholder for viz
         self.plot_placeholder()
         
@@ -225,9 +235,9 @@ class KMeansPage(ctk.CTkFrame):
         ax.set_facecolor('white')
         ax.axis('off')
         
-        self.canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
+        self.canvas = FigureCanvasTkAgg(fig, master=self.plot_container)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def update_feature_options(self, event=None):
         df = self.app.get_dataframe()
@@ -364,6 +374,10 @@ class KMeansPage(ctk.CTkFrame):
         self.insights_text.configure(state="disabled")
         
         self.plot_results(X, labels, centers, feature_names, inertia, sil_score)
+        
+        # Auto-switch to Visualization view to show results
+        self.view_var.set("Visualization")
+        self.switch_view("Visualization")
 
     def _handle_error(self, error_msg):
         self.progress_bar.stop()
@@ -393,9 +407,9 @@ class KMeansPage(ctk.CTkFrame):
         
         fig.tight_layout(pad=1.5)
         
-        self.canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
+        self.canvas = FigureCanvasTkAgg(fig, master=self.plot_container)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def show_elbow(self):
         if self.is_running: return
@@ -459,18 +473,22 @@ class KMeansPage(ctk.CTkFrame):
         fig = Figure(figsize=(6, 4.5), dpi=100, facecolor='white')
         ax = fig.add_subplot(111)
         
-        ax.plot(K, inertias, 'bx-')
-        ax.set_xlabel('k (Number of clusters)')
-        ax.set_ylabel('Inertia')
-        ax.set_title('Elbow Method For Optimal k')
+        ax.plot(K, inertias, 'bx-', linewidth=2, markersize=8)
+        ax.set_xlabel('k (Number of clusters)', fontsize=10, fontweight='bold')
+        ax.set_ylabel('Inertia', fontsize=10, fontweight='bold')
+        ax.set_title('Elbow Method For Optimal k', fontsize=12, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.3)
+        ax.set_facecolor('#FAFAFA')
         
-        self.canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
+        fig.tight_layout(pad=1.5)
+        
+        self.canvas = FigureCanvasTkAgg(fig, master=self.plot_container)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
-        self.is_running = False
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
         
-        self.plot_results(X, labels, centers, feature_names, inertia)
+        # Auto-switch to Visualization view
+        self.view_var.set("Visualization")
+        self.switch_view("Visualization")
 
     def _handle_error(self, error_msg):
         self.progress_bar.stop()
@@ -480,25 +498,4 @@ class KMeansPage(ctk.CTkFrame):
         self.is_running = False
         tk.messagebox.showerror("Error", f"Clustering failed: {error_msg}")
 
-    def plot_results(self, X, labels, centers, feature_names, inertia):
-        if self.canvas:
-            self.canvas.get_tk_widget().destroy()
-            
-        fig = Figure(figsize=(6, 4.5), dpi=100, facecolor='white')
-        ax = fig.add_subplot(111)
-        
-        scatter = ax.scatter(X[:, 0], X[:, 1], c=labels, cmap='viridis', alpha=0.6, s=30, edgecolors='white', linewidth=0.5)
-        ax.scatter(centers[:, 0], centers[:, 1], c='red', marker='X', s=150, edgecolors='black', linewidth=1.5, label='Centroids', zorder=5)
-        
-        ax.set_xlabel(feature_names[0], fontsize=10, fontweight='bold')
-        ax.set_ylabel(feature_names[1], fontsize=10, fontweight='bold')
-        ax.set_title(f'K-Means (k={len(centers)}, Inertia={inertia:.2f})', fontsize=12, fontweight='bold', pad=10)
-        ax.legend(frameon=True, shadow=True, fontsize=9)
-        ax.grid(True, alpha=0.2, linestyle='--')
-        ax.set_facecolor('#FAFAFA')
-        
-        fig.tight_layout(pad=1.5)
-        
-        self.canvas = FigureCanvasTkAgg(fig, master=self.viz_panel)
-        self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
+

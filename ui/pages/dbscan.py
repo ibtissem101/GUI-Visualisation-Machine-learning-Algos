@@ -193,6 +193,11 @@ class DBSCANPage(ctk.CTkFrame):
             border_width=1, 
             border_color="#E2E8F0"
         )
+        
+        # Plot container
+        self.plot_container = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
+        self.plot_container.pack(fill="both", expand=True, padx=10, pady=10)
+        
         # Placeholder for viz
         self.plot_placeholder()
         
@@ -236,9 +241,9 @@ class DBSCANPage(ctk.CTkFrame):
         ax.set_facecolor('white')
         ax.axis('off')
         
-        self.canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
+        self.canvas = FigureCanvasTkAgg(fig, master=self.plot_container)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def update_feature_options(self, event=None):
         df = self.app.get_dataframe()
@@ -384,6 +389,10 @@ class DBSCANPage(ctk.CTkFrame):
         self.insights_text.configure(state="disabled")
         
         self.plot_results(X, labels, feature_names, sil_score)
+        
+        # Auto-switch to Visualization view to show results
+        self.view_var.set("Visualization")
+        self.switch_view("Visualization")
 
     def _handle_error(self, error_msg):
         self.progress_bar.stop()
@@ -424,6 +433,6 @@ class DBSCANPage(ctk.CTkFrame):
         
         fig.tight_layout(pad=1.5)
         
-        self.canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
+        self.canvas = FigureCanvasTkAgg(fig, master=self.plot_container)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
