@@ -244,6 +244,10 @@ class MainWindow(ctk.CTk):
             )
             
         self.current_page.pack(fill="both", expand=True)
+        
+        # Update feature options if page has that method (after brief delay for UI to settle)
+        if hasattr(self.current_page, 'update_feature_options'):
+            self.after(100, self.current_page.update_feature_options)
 
     def set_dataframe(self, df, file_path):
         self.df = df

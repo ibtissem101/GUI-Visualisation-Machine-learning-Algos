@@ -4,8 +4,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
-from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score, pairwise_distances_argmin_min
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 import pandas as pd
 import numpy as np
 import threading
@@ -17,7 +18,9 @@ class ComparisonPage(ctk.CTkFrame):
         self.figure = None
         self.canvas = None
         self.is_running = False
-        self.results = {}
+        self.results = []
+        self.X_viz = None
+        self.viz_labels = []
         
         self.setup_ui()
         
@@ -34,157 +37,394 @@ class ComparisonPage(ctk.CTkFrame):
         
         subtitle = ctk.CTkLabel(
             self,
-            text="Compare different clustering algorithms using various performance metrics.",
+            text="Compare all clustering algorithms side-by-side using multiple performance metrics.",
             font=("Segoe UI", 14),
             text_color="#64748B",
             anchor="w"
         )
         subtitle.pack(padx=30, pady=(0, 20), anchor="w")
-        
-        # Content Layout
-        content = ctk.CTkFrame(self, fg_color="transparent")
-        content.pack(fill="both", expand=True, padx=30, pady=(0, 30))
-        
-        # Left Panel - Controls
-        controls_panel = ctk.CTkFrame(
-            content, 
-            fg_color="white", 
-            corner_radius=8, 
-            border_width=1, 
-            border_color="#E2E8F0",
-            width=300
+
+        # View Switcher
+        self.view_var = ctk.StringVar(value="Configuration")
+        self.view_switcher = ctk.CTkSegmentedButton(
+            self, 
+            values=["Configuration", "Results", "Visualizations"],
+            variable=self.view_var,
+            command=self.switch_view,
+            font=("Segoe UI", 12, "bold"),
+            height=32
         )
-        controls_panel.pack(side="left", fill="y", padx=(0, 20))
-        controls_panel.pack_propagate(False)
+        self.view_switcher.pack(padx=30, pady=(0, 20), anchor="w")
         
-        # Right Panel - Results
-        self.results_panel = ctk.CTkFrame(
-            content, 
+        # Content Area
+        self.content_area = ctk.CTkFrame(self, fg_color="transparent")
+        self.content_area.pack(fill="both", expand=True, padx=30, pady=(0, 30))
+        
+        # --- Configuration View ---
+        self.config_frame = ctk.CTkFrame(
+            self.content_area, 
             fg_color="white", 
             corner_radius=8, 
             border_width=1, 
             border_color="#E2E8F0"
         )
-        self.results_panel.pack(side="left", fill="both", expand=True)
+        self.create_config_view()
         
-        # Controls Title
+        # --- Results View ---
+        self.results_frame = ctk.CTkFrame(
+            self.content_area, 
+            fg_color="white", 
+            corner_radius=8, 
+            border_width=1, 
+            border_color="#E2E8F0"
+        )
+        self.create_results_view()
+        
+        # --- Visualizations View ---
+        self.viz_frame = ctk.CTkFrame(
+            self.content_area, 
+            fg_color="white", 
+            corner_radius=8, 
+            border_width=1, 
+            border_color="#E2E8F0"
+        )
+        self.create_viz_view()
+        
+        # Initialize view
+        self.switch_view("Configuration")
+
+    def switch_view(self, view_name):
+        self.config_frame.pack_forget()
+        self.results_frame.pack_forget()
+        self.viz_frame.pack_forget()
+        
+        if view_name == "Configuration":
+            self.config_frame.pack(fill="both", expand=True)
+        elif view_name == "Results":
+            self.results_frame.pack(fill="both", expand=True)
+        elif view_name == "Visualizations":
+            self.viz_frame.pack(fill="both", expand=True)
+
+    def create_config_view(self):
+        """Create the Configuration view"""
+        config_scroll = ctk.CTkScrollableFrame(self.config_frame, fg_color="transparent")
+        config_scroll.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        inner = ctk.CTkFrame(config_scroll, fg_color="transparent")
+        inner.pack(fill="both", expand=True, padx=20, pady=0)
+        
+        # Two column layout
+        inner.grid_columnconfigure(0, weight=1)
+        inner.grid_columnconfigure(1, weight=1)
+        
+        # Left Column - Algorithm Selection
+        left_col = ctk.CTkFrame(inner, fg_color="transparent")
+        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
+        
         ctk.CTkLabel(
-            controls_panel, 
-            text="Configuration", 
-            font=("Segoe UI", 16, "bold"),
-            text_color="#1E293B"
-        ).pack(padx=20, pady=20, anchor="w")
+            left_col,
+            text="Select Algorithms",
+            font=("Segoe UI", 18, "bold"),
+            text_color="#1E293B",
+            anchor="w"
+        ).pack(fill="x", pady=(0, 16))
         
-        # Algorithm Selection
+        # Algorithm checkboxes - All 4 algorithms
         self.algo_vars = {
             "K-Means": ctk.BooleanVar(value=True),
-            "Hierarchical": ctk.BooleanVar(value=True),
-            "DBSCAN": ctk.BooleanVar(value=False)
+            "K-Medoids": ctk.BooleanVar(value=True),
+            "Hierarchical (AGNES)": ctk.BooleanVar(value=True),
+            "DBSCAN": ctk.BooleanVar(value=True)
         }
         
-        ctk.CTkLabel(controls_panel, text="Select Algorithms:", font=("Segoe UI", 12, "bold")).pack(padx=20, pady=(0, 5), anchor="w")
-        
         for algo, var in self.algo_vars.items():
+            card = ctk.CTkFrame(left_col, fg_color="#F9FAFB", corner_radius=8)
+            card.pack(fill="x", pady=4)
+            
             ctk.CTkCheckBox(
-                controls_panel, 
+                card, 
                 text=algo, 
                 variable=var,
-                font=("Segoe UI", 12),
-                fg_color="#3B82F6"
-            ).pack(padx=20, pady=5, anchor="w")
-            
-        # Parameters
-        ctk.CTkLabel(controls_panel, text="Parameters:", font=("Segoe UI", 12, "bold")).pack(padx=20, pady=(20, 5), anchor="w")
+                font=("Segoe UI", 13),
+                fg_color="#3B82F6",
+                hover_color="#2563EB",
+                corner_radius=4
+            ).pack(padx=16, pady=12, anchor="w")
         
-        # K (Clusters)
-        k_frame = ctk.CTkFrame(controls_panel, fg_color="transparent")
-        k_frame.pack(fill="x", padx=20, pady=5)
-        ctk.CTkLabel(k_frame, text="Number of Clusters (k):", font=("Segoe UI", 12)).pack(side="left")
-        self.k_entry = ctk.CTkEntry(k_frame, width=60)
+        # Feature Selection - Multi-select with checkboxes
+        ctk.CTkLabel(
+            left_col,
+            text="Feature Selection",
+            font=("Segoe UI", 18, "bold"),
+            text_color="#1E293B",
+            anchor="w"
+        ).pack(fill="x", pady=(24, 8))
+        
+        ctk.CTkLabel(
+            left_col,
+            text="Select multiple features. PCA used for visualization if >2 features.",
+            font=("Segoe UI", 11),
+            text_color="#64748B",
+            anchor="w"
+        ).pack(fill="x", pady=(0, 10))
+        
+        self.features_frame = ctk.CTkFrame(left_col, fg_color="#F9FAFB", corner_radius=8)
+        self.features_frame.pack(fill="x", pady=(0, 10))
+        
+        self.feature_vars = {}
+        self.feature_checkboxes_frame = ctk.CTkFrame(self.features_frame, fg_color="transparent")
+        self.feature_checkboxes_frame.pack(fill="x", padx=15, pady=15)
+        
+        btn_row = ctk.CTkFrame(left_col, fg_color="transparent")
+        btn_row.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkButton(
+            btn_row, text="Select All", width=100, height=28,
+            font=("Segoe UI", 11), fg_color="#64748B", hover_color="#475569",
+            command=self.select_all_features
+        ).pack(side="left", padx=(0, 10))
+        
+        ctk.CTkButton(
+            btn_row, text="Deselect All", width=100, height=28,
+            font=("Segoe UI", 11), fg_color="#64748B", hover_color="#475569",
+            command=self.deselect_all_features
+        ).pack(side="left")
+        
+        self.features_count_label = ctk.CTkLabel(
+            btn_row, text="0 features selected", 
+            font=("Segoe UI", 11), text_color="#64748B"
+        )
+        self.features_count_label.pack(side="right")
+        
+        # Auto-update features
+        self.bind("<Visibility>", self.update_feature_options)
+        
+        # Right Column - Parameters
+        right_col = ctk.CTkFrame(inner, fg_color="transparent")
+        right_col.grid(row=0, column=1, sticky="nsew", padx=(20, 0))
+        
+        ctk.CTkLabel(
+            right_col,
+            text="Algorithm Parameters",
+            font=("Segoe UI", 18, "bold"),
+            text_color="#1E293B",
+            anchor="w"
+        ).pack(fill="x", pady=(0, 16))
+        
+        # K-Means/Hierarchical params
+        params_card = ctk.CTkFrame(right_col, fg_color="#F9FAFB", corner_radius=8)
+        params_card.pack(fill="x", pady=4)
+        params_inner = ctk.CTkFrame(params_card, fg_color="transparent")
+        params_inner.pack(fill="x", padx=16, pady=12)
+        
+        ctk.CTkLabel(params_inner, text="Number of Clusters (k)", font=("Segoe UI", 12, "bold"), anchor="w").pack(fill="x")
+        ctk.CTkLabel(params_inner, text="For K-Means, K-Medoids, and Hierarchical", font=("Segoe UI", 11), text_color="#6B7280", anchor="w").pack(fill="x")
+        self.k_entry = ctk.CTkEntry(params_inner, placeholder_text="e.g., 3", height=36)
         self.k_entry.insert(0, "3")
-        self.k_entry.pack(side="right")
+        self.k_entry.pack(fill="x", pady=(8, 0))
         
-        # DBSCAN Params
-        dbscan_frame = ctk.CTkFrame(controls_panel, fg_color="transparent")
-        dbscan_frame.pack(fill="x", padx=20, pady=5)
-        ctk.CTkLabel(dbscan_frame, text="DBSCAN Eps:", font=("Segoe UI", 12)).pack(side="left")
-        self.eps_entry = ctk.CTkEntry(dbscan_frame, width=60)
+        # Hierarchical linkage
+        linkage_card = ctk.CTkFrame(right_col, fg_color="#F9FAFB", corner_radius=8)
+        linkage_card.pack(fill="x", pady=(16, 4))
+        linkage_inner = ctk.CTkFrame(linkage_card, fg_color="transparent")
+        linkage_inner.pack(fill="x", padx=16, pady=12)
+        
+        ctk.CTkLabel(linkage_inner, text="Hierarchical Linkage", font=("Segoe UI", 12, "bold"), anchor="w").pack(fill="x")
+        self.linkage_var = ctk.StringVar(value="ward")
+        ctk.CTkOptionMenu(
+            linkage_inner, values=["ward", "complete", "average", "single"],
+            variable=self.linkage_var, height=32
+        ).pack(fill="x", pady=(8, 0))
+        
+        # DBSCAN params
+        dbscan_card = ctk.CTkFrame(right_col, fg_color="#F9FAFB", corner_radius=8)
+        dbscan_card.pack(fill="x", pady=(16, 4))
+        dbscan_inner = ctk.CTkFrame(dbscan_card, fg_color="transparent")
+        dbscan_inner.pack(fill="x", padx=16, pady=12)
+        
+        ctk.CTkLabel(dbscan_inner, text="DBSCAN Parameters", font=("Segoe UI", 12, "bold"), anchor="w").pack(fill="x")
+        
+        eps_frame = ctk.CTkFrame(dbscan_inner, fg_color="transparent")
+        eps_frame.pack(fill="x", pady=(8, 4))
+        ctk.CTkLabel(eps_frame, text="Epsilon (eps):", font=("Segoe UI", 11), width=120, anchor="w").pack(side="left")
+        self.eps_entry = ctk.CTkEntry(eps_frame, width=100, height=32)
         self.eps_entry.insert(0, "0.5")
         self.eps_entry.pack(side="right")
         
-        dbscan_min_frame = ctk.CTkFrame(controls_panel, fg_color="transparent")
-        dbscan_min_frame.pack(fill="x", padx=20, pady=5)
-        ctk.CTkLabel(dbscan_min_frame, text="DBSCAN Min Samples:", font=("Segoe UI", 12)).pack(side="left")
-        self.min_samples_entry = ctk.CTkEntry(dbscan_min_frame, width=60)
+        min_frame = ctk.CTkFrame(dbscan_inner, fg_color="transparent")
+        min_frame.pack(fill="x", pady=4)
+        ctk.CTkLabel(min_frame, text="Min Samples:", font=("Segoe UI", 11), width=120, anchor="w").pack(side="left")
+        self.min_samples_entry = ctk.CTkEntry(min_frame, width=100, height=32)
         self.min_samples_entry.insert(0, "5")
         self.min_samples_entry.pack(side="right")
         
-        # Visualization Options
-        ctk.CTkLabel(controls_panel, text="Visualizations:", font=("Segoe UI", 12, "bold")).pack(padx=20, pady=(20, 5), anchor="w")
+        # Progress and Run Button
+        self.progress_bar = ctk.CTkProgressBar(right_col, mode="indeterminate", height=4)
+        self.status_label = ctk.CTkLabel(right_col, text="", font=("Segoe UI", 12), text_color="#64748B")
         
-        self.viz_vars = {
-            "Silhouette Plot": ctk.BooleanVar(value=True),
-            "Cluster Distribution": ctk.BooleanVar(value=True)
-        }
-        
-        for viz, var in self.viz_vars.items():
-            ctk.CTkCheckBox(
-                controls_panel, 
-                text=viz, 
-                variable=var,
-                font=("Segoe UI", 12),
-                fg_color="#3B82F6"
-            ).pack(padx=20, pady=5, anchor="w")
-        
-        # Run Button
         self.run_btn = ctk.CTkButton(
-            controls_panel,
-            text="Run Comparison",
+            right_col,
+            text="🚀 Run Comparison",
             font=("Segoe UI", 14, "bold"),
             fg_color="#3B82F6",
             hover_color="#2563EB",
-            height=40,
+            height=48,
             command=self.run_comparison
         )
-        self.run_btn.pack(fill="x", padx=20, pady=30)
-        
-        # Progress Bar
-        self.progress_bar = ctk.CTkProgressBar(controls_panel, mode="indeterminate")
-        self.progress_bar.set(0)
-        
-        self.status_label = ctk.CTkLabel(
-            controls_panel,
-            text="",
-            font=("Segoe UI", 12),
-            text_color="#64748B"
-        )
+        self.run_btn.pack(fill="x", pady=(24, 0))
 
-        # Results Area
-        self.setup_results_area()
-
-    def setup_results_area(self):
-        # Clear previous results
-        for widget in self.results_panel.winfo_children():
-            widget.destroy()
-            
+    def create_results_view(self):
+        """Create the Results view with comparison table"""
+        inner = ctk.CTkFrame(self.results_frame, fg_color="transparent")
+        inner.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Header
         ctk.CTkLabel(
-            self.results_panel, 
-            text="Comparison Results", 
-            font=("Segoe UI", 16, "bold"),
-            text_color="#1E293B"
-        ).pack(padx=20, pady=20, anchor="w")
+            inner,
+            text="Comparison Results",
+            font=("Segoe UI", 18, "bold"),
+            text_color="#1E293B",
+            anchor="w"
+        ).pack(fill="x", pady=(0, 8))
         
-        self.viz_panel = ctk.CTkFrame(self.results_panel, fg_color="transparent")
-        self.viz_panel.pack(fill="both", expand=True, padx=10, pady=10)
+        ctk.CTkLabel(
+            inner,
+            text="Higher Silhouette & Calinski-Harabasz = Better | Lower Davies-Bouldin = Better",
+            font=("Segoe UI", 12),
+            text_color="#6B7280",
+            anchor="w"
+        ).pack(fill="x", pady=(0, 20))
         
-        # Placeholder text
-        self.placeholder_label = ctk.CTkLabel(
-            self.viz_panel,
+        # Table container
+        self.table_container = ctk.CTkScrollableFrame(inner, fg_color="transparent")
+        self.table_container.pack(fill="both", expand=True)
+        
+        # Placeholder
+        self.results_placeholder = ctk.CTkLabel(
+            self.table_container,
             text="Run comparison to see results",
             font=("Segoe UI", 14),
             text_color="#94A3B8"
         )
-        self.placeholder_label.pack(expand=True)
+        self.results_placeholder.pack(expand=True)
+        
+        # Winner section
+        self.winner_card = ctk.CTkFrame(inner, fg_color="#ECFDF5", corner_radius=8)
+        
+        self.winner_label = ctk.CTkLabel(
+            self.winner_card,
+            text="",
+            font=("Segoe UI", 14, "bold"),
+            text_color="#059669"
+        )
+        self.winner_label.pack(padx=20, pady=16)
+
+    def create_viz_view(self):
+        """Create the Visualizations view"""
+        # Controls at top
+        viz_controls = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
+        viz_controls.pack(fill="x", padx=20, pady=(20, 10))
+        
+        ctk.CTkLabel(
+            viz_controls,
+            text="Visualization Type:",
+            font=("Segoe UI", 12),
+            anchor="w"
+        ).pack(side="left", padx=(0, 10))
+        
+        self.viz_type_var = ctk.StringVar(value="Metrics Comparison")
+        self.viz_type_menu = ctk.CTkOptionMenu(
+            viz_controls,
+            values=["Metrics Comparison", "Cluster Scatter Plots", "Cluster Distributions"],
+            variable=self.viz_type_var,
+            command=self.update_visualization,
+            width=200
+        )
+        self.viz_type_menu.pack(side="left")
+        
+        self.pca_info_label = ctk.CTkLabel(
+            viz_controls,
+            text="",
+            font=("Segoe UI", 11),
+            text_color="#64748B"
+        )
+        self.pca_info_label.pack(side="right")
+        
+        # Plot container
+        self.plot_container = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
+        self.plot_container.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        
+        # Placeholder
+        self.viz_placeholder = ctk.CTkLabel(
+            self.plot_container,
+            text="Run comparison to see visualizations",
+            font=("Segoe UI", 14),
+            text_color="#94A3B8"
+        )
+        self.viz_placeholder.pack(expand=True)
+
+    def update_feature_options(self, event=None):
+        for widget in self.feature_checkboxes_frame.winfo_children():
+            widget.destroy()
+        self.feature_vars.clear()
+        
+        df = self.app.get_dataframe()
+        if df is None:
+            ctk.CTkLabel(
+                self.feature_checkboxes_frame,
+                text="⚠️ Please load a dataset first from the Data Loader page",
+                font=("Segoe UI", 12),
+                text_color="#64748B"
+            ).pack(pady=10)
+            self.features_count_label.configure(text="No data loaded")
+            return
+            
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        if not numeric_cols:
+            ctk.CTkLabel(
+                self.feature_checkboxes_frame,
+                text="⚠️ No numeric columns found in dataset",
+                font=("Segoe UI", 12),
+                text_color="#64748B"
+            ).pack(pady=10)
+            self.features_count_label.configure(text="No numeric columns")
+            return
+        
+        for i, col in enumerate(numeric_cols):
+            var = ctk.BooleanVar(value=i < 2)  # Select first 2 by default
+            self.feature_vars[col] = var
+            
+            cb = ctk.CTkCheckBox(
+                self.feature_checkboxes_frame,
+                text=col[:20] + "..." if len(col) > 20 else col,
+                variable=var,
+                font=("Segoe UI", 11),
+                fg_color="#3B82F6",
+                command=self.update_feature_count
+            )
+            row = i // 3
+            col_idx = i % 3
+            cb.grid(row=row, column=col_idx, padx=10, pady=5, sticky="w")
+        
+        self.update_feature_count()
+    
+    def update_feature_count(self):
+        count = sum(1 for var in self.feature_vars.values() if var.get())
+        self.features_count_label.configure(text=f"{count} features selected")
+    
+    def select_all_features(self):
+        for var in self.feature_vars.values():
+            var.set(True)
+        self.update_feature_count()
+    
+    def deselect_all_features(self):
+        for var in self.feature_vars.values():
+            var.set(False)
+        self.update_feature_count()
+    
+    def get_selected_features(self):
+        return [col for col, var in self.feature_vars.items() if var.get()]
 
     def run_comparison(self):
         if self.is_running:
@@ -194,10 +434,10 @@ class ComparisonPage(ctk.CTkFrame):
         if df is None:
             tk.messagebox.showwarning("No Data", "Please load a dataset first from the Data Loader page.")
             return
-            
-        numeric_df = df.select_dtypes(include=[np.number])
-        if numeric_df.shape[1] < 2:
-            tk.messagebox.showwarning("Insufficient Data", "Dataset needs at least 2 numeric columns.")
+        
+        selected_features = self.get_selected_features()
+        if len(selected_features) < 2:
+            tk.messagebox.showwarning("Insufficient Features", "Please select at least 2 features.")
             return
             
         # Validate inputs
@@ -205,6 +445,7 @@ class ComparisonPage(ctk.CTkFrame):
             k = int(self.k_entry.get())
             eps = float(self.eps_entry.get())
             min_samples = int(self.min_samples_entry.get())
+            linkage_method = self.linkage_var.get()
             
             if k < 2:
                 tk.messagebox.showerror("Invalid Input", "Number of clusters must be at least 2.")
@@ -220,61 +461,110 @@ class ComparisonPage(ctk.CTkFrame):
         
         # Show progress
         self.is_running = True
-        self.progress_bar.pack(fill="x", padx=20, pady=(0, 10))
+        self.progress_bar.pack(fill="x", pady=(16, 8))
         self.progress_bar.start()
         self.status_label.configure(text="Running comparison...")
-        self.status_label.pack(fill="x", padx=20, pady=(0, 10))
+        self.status_label.pack(fill="x")
         self.run_btn.configure(state="disabled", text="Running...")
         
         # Run in thread
         thread = threading.Thread(
             target=self._run_comparison_thread, 
-            args=(numeric_df, selected_algos, k, eps, min_samples)
+            args=(df, selected_algos, k, eps, min_samples, linkage_method, selected_features)
         )
         thread.daemon = True
         thread.start()
 
-    def _run_comparison_thread(self, numeric_df, selected_algos, k, eps, min_samples):
+    def _run_comparison_thread(self, df, selected_algos, k, eps, min_samples, linkage_method, selected_features):
         try:
-            X = numeric_df.iloc[:, :].values
+            X = df[selected_features].values
+            X = np.nan_to_num(X, nan=np.nanmean(X, axis=0))
             
-            # Preprocessing
-            scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X)
-            
-            # Sample if large for speed
-            if len(X_scaled) > 5000:
-                sample_idx = np.random.choice(len(X_scaled), 5000, replace=False)
-                X_sample = X_scaled[sample_idx]
+            # Sample if large
+            if len(X) > 5000:
+                sample_idx = np.random.choice(len(X), 5000, replace=False)
+                X_sample = X[sample_idx]
             else:
-                X_sample = X_scaled
+                X_sample = X
+            
+            # Standardize
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X_sample)
+            
+            # PCA for visualization if >2 features
+            if len(selected_features) > 2:
+                pca = PCA(n_components=2)
+                X_viz = pca.fit_transform(X_scaled)
+                explained_var = sum(pca.explained_variance_ratio_) * 100
+                viz_labels = [f"PC1 ({pca.explained_variance_ratio_[0]*100:.1f}%)", 
+                             f"PC2 ({pca.explained_variance_ratio_[1]*100:.1f}%)"]
+            else:
+                X_viz = X_sample
+                explained_var = None
+                viz_labels = selected_features[:2]
+            
+            self.X_viz = X_viz
+            self.viz_labels = viz_labels
                 
             results = []
             
             for algo_name in selected_algos:
                 labels = None
+                centers = None
                 
                 if algo_name == "K-Means":
                     model = KMeans(n_clusters=k, n_init=10, random_state=42)
-                    labels = model.fit_predict(X_sample)
-                elif algo_name == "Hierarchical":
-                    model = AgglomerativeClustering(n_clusters=k)
-                    labels = model.fit_predict(X_sample)
+                    labels = model.fit_predict(X_scaled)
+                    if len(selected_features) > 2:
+                        centers = pca.transform(model.cluster_centers_)
+                    else:
+                        centers = scaler.inverse_transform(model.cluster_centers_)
+                        
+                elif algo_name == "K-Medoids":
+                    model = KMeans(n_clusters=k, n_init=10, random_state=42)
+                    model.fit(X_scaled)
+                    closest, _ = pairwise_distances_argmin_min(model.cluster_centers_, X_scaled)
+                    labels = model.predict(X_scaled)
+                    if len(selected_features) > 2:
+                        centers = X_viz[closest]
+                    else:
+                        centers = X_sample[closest]
+                        
+                elif algo_name == "Hierarchical (AGNES)":
+                    model = AgglomerativeClustering(n_clusters=k, linkage=linkage_method)
+                    labels = model.fit_predict(X_scaled)
+                    # Calculate centers per cluster
+                    cluster_centers = []
+                    for i in range(k):
+                        mask = labels == i
+                        if mask.sum() > 0:
+                            cluster_centers.append(X_viz[mask].mean(axis=0))
+                    centers = np.array(cluster_centers) if cluster_centers else None
+                    
                 elif algo_name == "DBSCAN":
                     model = DBSCAN(eps=eps, min_samples=min_samples)
-                    labels = model.fit_predict(X_sample)
+                    labels = model.fit_predict(X_scaled)
+                    n_clusters_db = len(set(labels)) - (1 if -1 in labels else 0)
+                    if n_clusters_db > 0:
+                        cluster_centers = []
+                        for i in range(n_clusters_db):
+                            mask = labels == i
+                            if mask.sum() > 0:
+                                cluster_centers.append(X_viz[mask].mean(axis=0))
+                        centers = np.array(cluster_centers) if cluster_centers else None
+                    else:
+                        centers = None
                 
-                # Calculate metrics if valid clustering
+                # Calculate metrics
                 n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
                 
                 if n_clusters > 1:
-                    # Filter out noise for metrics if DBSCAN
                     if -1 in labels:
                         mask = labels != -1
-                        X_metrics = X_sample[mask]
+                        X_metrics = X_scaled[mask]
                         labels_metrics = labels[mask]
                     else:
-                        X_metrics = X_sample
+                        X_metrics = X_scaled
                         labels_metrics = labels
                         
                     if len(set(labels_metrics)) > 1:
@@ -285,190 +575,318 @@ class ComparisonPage(ctk.CTkFrame):
                         results.append({
                             "Algorithm": algo_name,
                             "Clusters": n_clusters,
-                            "Silhouette": f"{sil:.3f}",
-                            "Davies-Bouldin": f"{db:.3f}",
-                            "Calinski-Harabasz": f"{ch:.1f}",
-                            "Labels": labels_metrics  # Store labels for visualization
+                            "Silhouette": sil,
+                            "Davies-Bouldin": db,
+                            "Calinski-Harabasz": ch,
+                            "Labels": labels,
+                            "Centers": centers
                         })
                     else:
                         results.append({
                             "Algorithm": algo_name,
                             "Clusters": n_clusters,
-                            "Silhouette": "N/A",
-                            "Davies-Bouldin": "N/A",
-                            "Calinski-Harabasz": "N/A",
-                            "Labels": None
+                            "Silhouette": None,
+                            "Davies-Bouldin": None,
+                            "Calinski-Harabasz": None,
+                            "Labels": labels,
+                            "Centers": centers
                         })
                 else:
                     results.append({
                         "Algorithm": algo_name,
                         "Clusters": n_clusters,
-                        "Silhouette": "N/A",
-                        "Davies-Bouldin": "N/A",
-                        "Calinski-Harabasz": "N/A",
-                        "Labels": None
+                        "Silhouette": None,
+                        "Davies-Bouldin": None,
+                        "Calinski-Harabasz": None,
+                        "Labels": labels,
+                        "Centers": centers
                     })
             
-            self.after(0, lambda: self._finish_comparison(results))
+            self.after(0, lambda: self._finish_comparison(results, len(selected_features), explained_var))
             
         except Exception as e:
             self.after(0, lambda err=str(e): self._handle_error(err))
 
-    def _finish_comparison(self, results):
+    def _finish_comparison(self, results, n_features, explained_var):
         self.progress_bar.stop()
         self.progress_bar.pack_forget()
         self.status_label.configure(text="✓ Comparison complete!")
         self.after(2000, lambda: self.status_label.pack_forget())
-        self.run_btn.configure(state="normal", text="Run Comparison")
+        self.run_btn.configure(state="normal", text="🚀 Run Comparison")
         self.is_running = False
         
+        self.results = results
+        
+        # Update PCA info
+        if explained_var:
+            self.pca_info_label.configure(text=f"📐 PCA: {explained_var:.1f}% variance from {n_features} features")
+        else:
+            self.pca_info_label.configure(text=f"📐 Using {n_features} features directly")
+        
         self.display_results(results)
+        self.update_visualization()
+        
+        # Auto-switch to Results view
+        self.view_var.set("Results")
+        self.switch_view("Results")
 
     def _handle_error(self, error_msg):
         self.progress_bar.stop()
         self.progress_bar.pack_forget()
         self.status_label.pack_forget()
-        self.run_btn.configure(state="normal", text="Run Comparison")
+        self.run_btn.configure(state="normal", text="🚀 Run Comparison")
         self.is_running = False
         tk.messagebox.showerror("Error", f"Comparison failed: {error_msg}")
 
     def display_results(self, results):
         # Clear previous results
-        for widget in self.viz_panel.winfo_children():
+        for widget in self.table_container.winfo_children():
             widget.destroy()
             
         if not results:
-            ctk.CTkLabel(self.viz_panel, text="No results to display.").pack()
+            ctk.CTkLabel(self.table_container, text="No results to display.", text_color="#94A3B8").pack(expand=True)
+            self.winner_card.pack_forget()
             return
 
-        # Create Table
-        table_frame = ctk.CTkFrame(self.viz_panel, fg_color="transparent")
-        table_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        # Create header row
+        header_frame = ctk.CTkFrame(self.table_container, fg_color="#F1F5F9", corner_radius=8)
+        header_frame.pack(fill="x", pady=(0, 4))
         
-        # Headers
-        headers = ["Algorithm", "Clusters", "Silhouette (↑)", "Davies-Bouldin (↓)", "Calinski-Harabasz (↑)"]
+        headers = ["Algorithm", "Clusters", "Silhouette ↑", "Davies-Bouldin ↓", "Calinski-Harabasz ↑"]
+        header_inner = ctk.CTkFrame(header_frame, fg_color="transparent")
+        header_inner.pack(fill="x", padx=16, pady=12)
         
         for i, header in enumerate(headers):
             ctk.CTkLabel(
-                table_frame, 
+                header_inner, 
                 text=header, 
                 font=("Segoe UI", 12, "bold"),
-                width=150,
+                text_color="#374151",
+                width=140,
                 anchor="w"
-            ).grid(row=0, column=i, padx=5, pady=10, sticky="w")
+            ).pack(side="left", padx=4)
             
-        # Rows
+        # Find best performer
+        valid_results = [r for r in results if r["Silhouette"] is not None]
+        best_idx = -1
+        if valid_results:
+            best_sil = max(r["Silhouette"] for r in valid_results)
+            for i, r in enumerate(results):
+                if r["Silhouette"] == best_sil:
+                    best_idx = i
+                    break
+        
+        # Create data rows
         for i, row in enumerate(results):
-            ctk.CTkLabel(table_frame, text=row["Algorithm"], font=("Segoe UI", 12), anchor="w").grid(row=i+1, column=0, padx=5, pady=5, sticky="w")
-            ctk.CTkLabel(table_frame, text=str(row["Clusters"]), font=("Segoe UI", 12), anchor="w").grid(row=i+1, column=1, padx=5, pady=5, sticky="w")
-            ctk.CTkLabel(table_frame, text=row["Silhouette"], font=("Segoe UI", 12), anchor="w").grid(row=i+1, column=2, padx=5, pady=5, sticky="w")
-            ctk.CTkLabel(table_frame, text=row["Davies-Bouldin"], font=("Segoe UI", 12), anchor="w").grid(row=i+1, column=3, padx=5, pady=5, sticky="w")
-            ctk.CTkLabel(table_frame, text=row["Calinski-Harabasz"], font=("Segoe UI", 12), anchor="w").grid(row=i+1, column=4, padx=5, pady=5, sticky="w")
+            is_best = (i == best_idx)
+            row_color = "#ECFDF5" if is_best else "#FFFFFF"
+            border_color = "#10B981" if is_best else "#E5E7EB"
             
-        # Plotting
-        try:
-            valid_results = [r for r in results if r["Silhouette"] != "N/A"]
+            row_frame = ctk.CTkFrame(self.table_container, fg_color=row_color, corner_radius=8, border_width=1, border_color=border_color)
+            row_frame.pack(fill="x", pady=2)
             
-            # Determine number of plots
-            plots_to_show = []
-            if self.viz_vars["Silhouette Plot"].get() and valid_results:
-                plots_to_show.append("silhouette")
-            if self.viz_vars["Cluster Distribution"].get() and valid_results:
-                plots_to_show.append("distribution")
-                
-            if not plots_to_show:
-                return
+            row_inner = ctk.CTkFrame(row_frame, fg_color="transparent")
+            row_inner.pack(fill="x", padx=16, pady=12)
+            
+            # Algorithm name
+            algo_frame = ctk.CTkFrame(row_inner, fg_color="transparent", width=140)
+            algo_frame.pack(side="left", padx=4)
+            algo_frame.pack_propagate(False)
+            
+            algo_text = "🏆 " + row["Algorithm"] if is_best else row["Algorithm"]
+            ctk.CTkLabel(algo_frame, text=algo_text, font=("Segoe UI", 12, "bold" if is_best else "normal"), anchor="w").pack(anchor="w")
+            
+            # Clusters
+            ctk.CTkLabel(row_inner, text=str(row["Clusters"]), font=("Segoe UI", 12), width=140, anchor="w").pack(side="left", padx=4)
+            
+            # Metrics
+            sil_text = f"{row['Silhouette']:.4f}" if row["Silhouette"] is not None else "N/A"
+            db_text = f"{row['Davies-Bouldin']:.4f}" if row["Davies-Bouldin"] is not None else "N/A"
+            ch_text = f"{row['Calinski-Harabasz']:.1f}" if row["Calinski-Harabasz"] is not None else "N/A"
+            
+            ctk.CTkLabel(row_inner, text=sil_text, font=("Segoe UI", 12), width=140, anchor="w").pack(side="left", padx=4)
+            ctk.CTkLabel(row_inner, text=db_text, font=("Segoe UI", 12), width=140, anchor="w").pack(side="left", padx=4)
+            ctk.CTkLabel(row_inner, text=ch_text, font=("Segoe UI", 12), width=140, anchor="w").pack(side="left", padx=4)
+        
+        # Winner announcement
+        if best_idx >= 0:
+            winner = results[best_idx]
+            self.winner_label.configure(
+                text=f"🏆 Best Performer: {winner['Algorithm']} with Silhouette Score of {winner['Silhouette']:.4f}"
+            )
+            self.winner_card.pack(fill="x", pady=(20, 0))
+        else:
+            self.winner_card.pack_forget()
 
-            fig = Figure(figsize=(8, 4 * len(plots_to_show)), dpi=100, facecolor='white')
+    def update_visualization(self, *args):
+        """Update the visualization based on selected type"""
+        if not self.results or self.X_viz is None:
+            return
             
-            current_plot = 1
-            total_plots = len(plots_to_show)
-            
-            if "silhouette" in plots_to_show:
-                ax = fig.add_subplot(total_plots, 1, current_plot)
-                algos = [r["Algorithm"] for r in valid_results]
-                scores = [float(r["Silhouette"]) for r in valid_results]
-                
-                bars = ax.bar(algos, scores, color='#3B82F6', alpha=0.7)
-                ax.set_ylabel('Silhouette Score')
-                ax.set_title('Silhouette Score Comparison')
-                ax.grid(axis='y', alpha=0.3)
-                
-                for bar in bars:
-                    height = bar.get_height()
-                    ax.text(bar.get_x() + bar.get_width()/2., height,
-                            f'{height:.3f}',
-                            ha='center', va='bottom')
-                current_plot += 1
-                
-            if "distribution" in plots_to_show:
-                ax = fig.add_subplot(total_plots, 1, current_plot)
-                
-                # Prepare data for grouped bar chart
-                algos = [r["Algorithm"] for r in valid_results]
-                all_labels = [r["Labels"] for r in valid_results]
-                
-                # Find max clusters to normalize colors/groups
-                max_clusters = max([len(set(l)) for l in all_labels])
-                
-                # We will plot the size of each cluster for each algo
-                # This is a bit complex for a single plot if cluster counts differ widely
-                # Simplified: Plot standard deviation of cluster sizes? Or just stacked bars?
-                # Let's do side-by-side bars for cluster sizes.
-                
-                # Actually, let's just plot the number of points in each cluster for each algo
-                # Since k might be different (e.g. DBSCAN), this is tricky.
-                # Let's plot a histogram of cluster labels for the first valid algo, or subplots?
-                # Given the space, let's plot the distribution of cluster sizes (std dev) or just the counts.
-                
-                # Better: Subplots for each algo's distribution? No, too many.
-                # Let's plot the "Balance" of clusters - standard deviation of cluster sizes.
-                # Or just plot the counts for the first algo as an example?
-                # The user asked for "histograms".
-                # Let's plot a grouped bar chart where x-axis is Algorithm, and we show bars for Cluster 0, Cluster 1, etc.
-                # If too many clusters, we limit to top 5.
-                
-                width = 0.8 / len(algos)
-                x = np.arange(max_clusters)
-                
-                for i, (algo, labels) in enumerate(zip(algos, all_labels)):
-                    unique, counts = np.unique(labels, return_counts=True)
-                    # Pad with 0 if fewer clusters
-                    padded_counts = np.zeros(max_clusters)
-                    for u, c in zip(unique, counts):
-                        if u >= 0 and u < max_clusters: # Ignore noise -1 for index or handle it
-                             padded_counts[int(u)] = c
-                    
-                    # Offset bars
-                    # This is getting complicated to visualize generally.
-                    # Let's switch to: One subplot per algorithm for distribution if requested?
-                    # Or just plot the distribution of the BEST performing algorithm?
-                    pass
+        for widget in self.plot_container.winfo_children():
+            widget.destroy()
+        
+        viz_type = self.viz_type_var.get()
+        
+        if viz_type == "Metrics Comparison":
+            self.plot_metrics_comparison()
+        elif viz_type == "Cluster Scatter Plots":
+            self.plot_cluster_scatter()
+        elif viz_type == "Cluster Distributions":
+            self.plot_cluster_distributions()
 
-                # Re-thinking: User wants "histograms". Plural.
-                # Maybe just plot the distribution of cluster sizes for each algorithm.
-                # X-axis: Cluster ID, Y-axis: Count.
-                # If multiple algos, maybe use subplots within the figure.
-                
-                # Let's try to fit them in one row if possible, or grid.
-                # Since we are inside a single figure, let's split the subplot area.
-                # Actually, let's just plot the distribution for the algorithm with the highest Silhouette score.
-                
-                best_algo_idx = np.argmax([float(r["Silhouette"]) for r in valid_results])
-                best_algo = valid_results[best_algo_idx]
-                labels = best_algo["Labels"]
-                unique, counts = np.unique(labels, return_counts=True)
-                
-                ax.bar(unique.astype(str), counts, color='#10B981', alpha=0.7)
-                ax.set_xlabel('Cluster Label')
-                ax.set_ylabel('Count')
-                ax.set_title(f'Cluster Distribution ({best_algo["Algorithm"]})')
-                ax.grid(axis='y', alpha=0.3)
-                
-            fig.tight_layout()
-            canvas = FigureCanvasTkAgg(fig, master=self.viz_panel)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill="both", expand=True, padx=20, pady=20)
+    def plot_metrics_comparison(self):
+        valid_results = [r for r in self.results if r["Silhouette"] is not None]
+        if not valid_results:
+            ctk.CTkLabel(self.plot_container, text="No valid results to visualize", text_color="#94A3B8").pack(expand=True)
+            return
+        
+        fig = Figure(figsize=(10, 4), dpi=100, facecolor='white')
+        
+        algos = [r["Algorithm"] for r in valid_results]
+        x = np.arange(len(algos))
+        
+        ax1 = fig.add_subplot(131)
+        sil_scores = [r["Silhouette"] for r in valid_results]
+        bars1 = ax1.bar(x, sil_scores, color='#3B82F6', alpha=0.8)
+        ax1.set_ylabel('Score')
+        ax1.set_title('Silhouette Score', fontweight='bold')
+        ax1.set_xticks(x)
+        ax1.set_xticklabels([a[:10] for a in algos], rotation=45, ha='right')
+        ax1.grid(axis='y', alpha=0.3)
+        for bar, score in zip(bars1, sil_scores):
+            ax1.text(bar.get_x() + bar.get_width()/2., bar.get_height(), f'{score:.3f}',
+                    ha='center', va='bottom', fontsize=8)
+        
+        ax2 = fig.add_subplot(132)
+        db_scores = [r["Davies-Bouldin"] for r in valid_results]
+        bars2 = ax2.bar(x, db_scores, color='#EF4444', alpha=0.8)
+        ax2.set_ylabel('Score')
+        ax2.set_title('Davies-Bouldin Index', fontweight='bold')
+        ax2.set_xticks(x)
+        ax2.set_xticklabels([a[:10] for a in algos], rotation=45, ha='right')
+        ax2.grid(axis='y', alpha=0.3)
+        for bar, score in zip(bars2, db_scores):
+            ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height(), f'{score:.3f}',
+                    ha='center', va='bottom', fontsize=8)
+        
+        ax3 = fig.add_subplot(133)
+        ch_scores = [r["Calinski-Harabasz"] for r in valid_results]
+        bars3 = ax3.bar(x, ch_scores, color='#10B981', alpha=0.8)
+        ax3.set_ylabel('Score')
+        ax3.set_title('Calinski-Harabasz Index', fontweight='bold')
+        ax3.set_xticks(x)
+        ax3.set_xticklabels([a[:10] for a in algos], rotation=45, ha='right')
+        ax3.grid(axis='y', alpha=0.3)
+        for bar, score in zip(bars3, ch_scores):
+            ax3.text(bar.get_x() + bar.get_width()/2., bar.get_height(), f'{score:.0f}',
+                    ha='center', va='bottom', fontsize=8)
+        
+        fig.tight_layout(pad=2)
+        
+        canvas = FigureCanvasTkAgg(fig, master=self.plot_container)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def plot_cluster_scatter(self):
+        valid_results = [r for r in self.results if r["Labels"] is not None]
+        if not valid_results:
+            ctk.CTkLabel(self.plot_container, text="No valid results to visualize", text_color="#94A3B8").pack(expand=True)
+            return
+        
+        n_algos = len(valid_results)
+        cols = min(n_algos, 2)
+        rows = (n_algos + cols - 1) // cols
+        
+        fig = Figure(figsize=(5*cols, 4*rows), dpi=100, facecolor='white')
+        
+        for i, result in enumerate(valid_results):
+            ax = fig.add_subplot(rows, cols, i + 1)
             
-        except Exception as e:
-            print(f"Error plotting: {e}")
+            labels = result["Labels"]
+            centers = result["Centers"]
+            
+            unique_labels = set(labels)
+            
+            # Plot noise if exists
+            if -1 in unique_labels:
+                noise_mask = labels == -1
+                ax.scatter(self.X_viz[noise_mask, 0], self.X_viz[noise_mask, 1], 
+                          c='gray', marker='x', alpha=0.5, s=15, label='Noise')
+            
+            # Plot clusters
+            cluster_mask = labels != -1
+            if cluster_mask.any():
+                scatter = ax.scatter(self.X_viz[cluster_mask, 0], self.X_viz[cluster_mask, 1], 
+                                   c=labels[cluster_mask], cmap='viridis', alpha=0.6, s=20)
+            
+            # Plot centers
+            if centers is not None and len(centers) > 0:
+                ax.scatter(centers[:, 0], centers[:, 1], c='red', marker='X', 
+                          s=100, edgecolors='black', linewidth=1, zorder=5, label='Centers')
+            
+            sil_text = f"Sil: {result['Silhouette']:.3f}" if result['Silhouette'] else "Sil: N/A"
+            ax.set_title(f"{result['Algorithm']}\n{sil_text}", fontweight='bold', fontsize=10)
+            ax.set_xlabel(self.viz_labels[0], fontsize=9)
+            ax.set_ylabel(self.viz_labels[1], fontsize=9)
+            ax.grid(True, alpha=0.2)
+            ax.set_facecolor('#FAFAFA')
+        
+        fig.tight_layout(pad=2)
+        
+        canvas = FigureCanvasTkAgg(fig, master=self.plot_container)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def plot_cluster_distributions(self):
+        valid_results = [r for r in self.results if r["Labels"] is not None]
+        if not valid_results:
+            ctk.CTkLabel(self.plot_container, text="No valid results to visualize", text_color="#94A3B8").pack(expand=True)
+            return
+        
+        n_algos = len(valid_results)
+        cols = min(n_algos, 2)
+        rows = (n_algos + cols - 1) // cols
+        
+        fig = Figure(figsize=(5*cols, 4*rows), dpi=100, facecolor='white')
+        
+        colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899']
+        
+        for i, result in enumerate(valid_results):
+            ax = fig.add_subplot(rows, cols, i + 1)
+            
+            labels = result["Labels"]
+            unique, counts = np.unique(labels, return_counts=True)
+            
+            bar_labels = []
+            bar_counts = []
+            bar_colors = []
+            
+            color_idx = 0
+            for u, c in zip(unique, counts):
+                if u == -1:
+                    bar_labels.append('Noise')
+                    bar_colors.append('gray')
+                else:
+                    bar_labels.append(f'C{u}')
+                    bar_colors.append(colors[color_idx % len(colors)])
+                    color_idx += 1
+                bar_counts.append(c)
+            
+            bars = ax.bar(bar_labels, bar_counts, color=bar_colors, alpha=0.8)
+            
+            for bar, count in zip(bars, bar_counts):
+                ax.text(bar.get_x() + bar.get_width()/2., bar.get_height(), f'{count}',
+                       ha='center', va='bottom', fontsize=9)
+            
+            ax.set_xlabel('Cluster', fontsize=10)
+            ax.set_ylabel('Count', fontsize=10)
+            ax.set_title(f"{result['Algorithm']}\n({result['Clusters']} clusters)", fontweight='bold', fontsize=10)
+            ax.grid(axis='y', alpha=0.3)
+            ax.set_facecolor('#FAFAFA')
+        
+        fig.tight_layout(pad=2)
+        
+        canvas = FigureCanvasTkAgg(fig, master=self.plot_container)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)

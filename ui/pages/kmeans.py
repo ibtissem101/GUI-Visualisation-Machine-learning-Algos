@@ -4,6 +4,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 import pandas as pd
 import numpy as np
 import threading
@@ -15,6 +17,7 @@ class KMeansPage(ctk.CTkFrame):
         self.figure = None
         self.canvas = None
         self.is_running = False
+        self.selected_features = []
         
         self.setup_ui()
         
@@ -63,9 +66,12 @@ class KMeansPage(ctk.CTkFrame):
             border_color="#E2E8F0"
         )
         
-        # Controls container
-        controls_inner = ctk.CTkFrame(self.params_frame, fg_color="transparent")
-        controls_inner.pack(fill="both", expand=True, padx=40, pady=40)
+        # Scrollable controls container
+        params_scroll = ctk.CTkScrollableFrame(self.params_frame, fg_color="transparent")
+        params_scroll.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        controls_inner = ctk.CTkFrame(params_scroll, fg_color="transparent")
+        controls_inner.pack(fill="both", expand=True, padx=20, pady=0)
         
         ctk.CTkLabel(
             controls_inner, 
@@ -115,31 +121,54 @@ class KMeansPage(ctk.CTkFrame):
         )
         self.init_menu.grid(row=3, column=1, padx=10, pady=(0, 20), sticky="ew")
 
-        # Feature Selection
+        # Feature Selection - Multi-select
         ctk.CTkLabel(
             controls_inner, 
             text="Feature Selection", 
             font=("Segoe UI", 16, "bold"), 
             text_color="#1E293B",
             anchor="w"
-        ).pack(fill="x", pady=(10, 10))
+        ).pack(fill="x", pady=(10, 5))
         
-        fs_frame = ctk.CTkFrame(controls_inner, fg_color="transparent")
-        fs_frame.pack(fill="x", pady=(0, 20))
-        fs_frame.grid_columnconfigure(0, weight=1)
-        fs_frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(
+            controls_inner, 
+            text="Select multiple features for clustering. Visualization uses PCA if more than 2 features selected.",
+            font=("Segoe UI", 11),
+            text_color="#64748B",
+            anchor="w"
+        ).pack(fill="x", pady=(0, 10))
         
-        ctk.CTkLabel(fs_frame, text="X Axis:", text_color="#475569", font=("Segoe UI", 12), anchor="w").grid(row=0, column=0, padx=10, pady=(0, 5), sticky="w")
-        self.x_axis_var = ctk.StringVar(value="")
-        self.x_axis_menu = ctk.CTkOptionMenu(fs_frame, variable=self.x_axis_var, values=["Load Data First"])
-        self.x_axis_menu.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+        # Feature checkboxes container
+        self.features_frame = ctk.CTkFrame(controls_inner, fg_color="#F9FAFB", corner_radius=8)
+        self.features_frame.pack(fill="x", pady=(0, 10))
         
-        ctk.CTkLabel(fs_frame, text="Y Axis:", text_color="#475569", font=("Segoe UI", 12), anchor="w").grid(row=0, column=1, padx=10, pady=(0, 5), sticky="w")
-        self.y_axis_var = ctk.StringVar(value="")
-        self.y_axis_menu = ctk.CTkOptionMenu(fs_frame, variable=self.y_axis_var, values=["Load Data First"])
-        self.y_axis_menu.grid(row=1, column=1, padx=10, pady=(0, 10), sticky="ew")
+        self.feature_vars = {}
+        self.feature_checkboxes_frame = ctk.CTkFrame(self.features_frame, fg_color="transparent")
+        self.feature_checkboxes_frame.pack(fill="x", padx=15, pady=15)
         
-        # Update features button (hidden, called automatically when data loaded)
+        # Select All / Deselect buttons
+        btn_row = ctk.CTkFrame(controls_inner, fg_color="transparent")
+        btn_row.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkButton(
+            btn_row, text="Select All", width=100, height=28,
+            font=("Segoe UI", 11), fg_color="#64748B", hover_color="#475569",
+            command=self.select_all_features
+        ).pack(side="left", padx=(0, 10))
+        
+        ctk.CTkButton(
+            btn_row, text="Deselect All", width=100, height=28,
+            font=("Segoe UI", 11), fg_color="#64748B", hover_color="#475569",
+            command=self.deselect_all_features
+        ).pack(side="left")
+        
+        self.features_count_label = ctk.CTkLabel(
+            btn_row, text="0 features selected", 
+            font=("Segoe UI", 11), text_color="#64748B"
+        )
+        self.features_count_label.pack(side="right")
+        
+        # Update features on visibility
         self.bind("<Visibility>", self.update_feature_options)
 
         # Progress bar
@@ -187,6 +216,15 @@ class KMeansPage(ctk.CTkFrame):
             width=180
         )
         self.elbow_btn.pack(side="left")
+        
+        # PCA info label
+        self.pca_label = ctk.CTkLabel(
+            viz_controls,
+            text="",
+            font=("Segoe UI", 11),
+            text_color="#64748B"
+        )
+        self.pca_label.pack(side="right")
         
         # Plot container
         self.plot_container = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
@@ -240,19 +278,70 @@ class KMeansPage(ctk.CTkFrame):
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def update_feature_options(self, event=None):
+        # Clear existing widgets
+        for widget in self.feature_checkboxes_frame.winfo_children():
+            widget.destroy()
+        self.feature_vars.clear()
+        
         df = self.app.get_dataframe()
-        if df is not None:
-            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-            if numeric_cols:
-                self.x_axis_menu.configure(values=numeric_cols)
-                self.y_axis_menu.configure(values=numeric_cols)
-                if not self.x_axis_var.get() or self.x_axis_var.get() not in numeric_cols:
-                    self.x_axis_var.set(numeric_cols[0])
-                if len(numeric_cols) > 1:
-                    if not self.y_axis_var.get() or self.y_axis_var.get() not in numeric_cols:
-                        self.y_axis_var.set(numeric_cols[1])
-                else:
-                    self.y_axis_var.set(numeric_cols[0])
+        if df is None:
+            # Show placeholder message
+            ctk.CTkLabel(
+                self.feature_checkboxes_frame,
+                text="⚠️ Please load a dataset first from the Data Loader page",
+                font=("Segoe UI", 12),
+                text_color="#64748B"
+            ).pack(pady=10)
+            self.features_count_label.configure(text="No data loaded")
+            return
+            
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        if not numeric_cols:
+            ctk.CTkLabel(
+                self.feature_checkboxes_frame,
+                text="⚠️ No numeric columns found in dataset",
+                font=("Segoe UI", 12),
+                text_color="#64748B"
+            ).pack(pady=10)
+            self.features_count_label.configure(text="No numeric columns")
+            return
+        
+        # Create checkboxes in a grid (3 columns)
+        for i, col in enumerate(numeric_cols):
+            var = ctk.BooleanVar(value=i < 2)  # Select first 2 by default
+            self.feature_vars[col] = var
+            
+            cb = ctk.CTkCheckBox(
+                self.feature_checkboxes_frame,
+                text=col[:20] + "..." if len(col) > 20 else col,
+                variable=var,
+                font=("Segoe UI", 11),
+                fg_color="#3B82F6",
+                command=self.update_feature_count
+            )
+            row = i // 3
+            col_idx = i % 3
+            cb.grid(row=row, column=col_idx, padx=10, pady=5, sticky="w")
+        
+        self.update_feature_count()
+    
+    def update_feature_count(self):
+        count = sum(1 for var in self.feature_vars.values() if var.get())
+        self.features_count_label.configure(text=f"{count} features selected")
+    
+    def select_all_features(self):
+        for var in self.feature_vars.values():
+            var.set(True)
+        self.update_feature_count()
+    
+    def deselect_all_features(self):
+        for var in self.feature_vars.values():
+            var.set(False)
+        self.update_feature_count()
+    
+    def get_selected_features(self):
+        return [col for col, var in self.feature_vars.items() if var.get()]
 
     def run_kmeans(self):
         if self.is_running:
@@ -262,20 +351,11 @@ class KMeansPage(ctk.CTkFrame):
         if df is None:
             tk.messagebox.showwarning("No Data", "Please load a dataset first from the Data Loader page.")
             return
-            
-        # Get numeric columns
-        numeric_df = df.select_dtypes(include=[np.number])
-        if numeric_df.shape[1] < 2:
-            tk.messagebox.showwarning("Insufficient Data", "Dataset needs at least 2 numeric columns.")
-            return
-            
-        x_col = self.x_axis_var.get()
-        y_col = self.y_axis_var.get()
         
-        if not x_col or not y_col:
-            self.update_feature_options()
-            x_col = self.x_axis_var.get()
-            y_col = self.y_axis_var.get()
+        selected_features = self.get_selected_features()
+        if len(selected_features) < 2:
+            tk.messagebox.showwarning("Insufficient Features", "Please select at least 2 features for clustering.")
+            return
             
         try:
             k = int(self.k_entry.get())
@@ -300,54 +380,75 @@ class KMeansPage(ctk.CTkFrame):
         self.elbow_btn.configure(state="disabled")
         
         # Run in thread
-        thread = threading.Thread(target=self._run_kmeans_thread, args=(numeric_df, k, max_iter, n_init, init_method, x_col, y_col))
+        thread = threading.Thread(target=self._run_kmeans_thread, args=(df, k, max_iter, n_init, init_method, selected_features))
         thread.daemon = True
         thread.start()
 
-    def _run_kmeans_thread(self, numeric_df, k, max_iter, n_init, init_method, x_col, y_col):
+    def _run_kmeans_thread(self, df, k, max_iter, n_init, init_method, selected_features):
         try:
-            # Use selected columns
-            X = numeric_df[[x_col, y_col]].values
-            feature_names = [x_col, y_col]
+            # Use selected features
+            X = df[selected_features].values
             
-            # Sample if dataset is large for faster processing
+            # Handle missing values
+            X = np.nan_to_num(X, nan=np.nanmean(X, axis=0))
+            
+            # Sample if dataset is large
             if len(X) > 5000:
                 sample_idx = np.random.choice(len(X), 5000, replace=False)
                 X_sample = X[sample_idx]
             else:
                 X_sample = X
             
-            # Optimize: reduce n_init and use algorithm='elkan' for speed
+            # Standardize
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X_sample)
+            
+            # Fit K-Means
             kmeans = KMeans(
                 n_clusters=k, 
                 n_init=n_init,
                 max_iter=max_iter,
                 algorithm='lloyd',
                 init=init_method,
-                random_state=42,
-
+                random_state=42
             )
-            labels = kmeans.fit_predict(X_sample)
+            labels = kmeans.fit_predict(X_scaled)
             
             # Calculate Silhouette Score
             if len(set(labels)) > 1:
-                sil_score = silhouette_score(X_sample, labels)
+                sil_score = silhouette_score(X_scaled, labels)
             else:
                 sil_score = -1.0
             
-            # Schedule UI update on main thread with results
+            # PCA for visualization if more than 2 features
+            if len(selected_features) > 2:
+                pca = PCA(n_components=2)
+                X_viz = pca.fit_transform(X_scaled)
+                centers_viz = pca.transform(kmeans.cluster_centers_)
+                explained_var = sum(pca.explained_variance_ratio_) * 100
+                viz_labels = [f"PC1 ({pca.explained_variance_ratio_[0]*100:.1f}%)", 
+                             f"PC2 ({pca.explained_variance_ratio_[1]*100:.1f}%)"]
+            else:
+                X_viz = X_sample
+                centers_viz = scaler.inverse_transform(kmeans.cluster_centers_)
+                explained_var = None
+                viz_labels = selected_features[:2]
+            
+            # Schedule UI update
             self.after(0, lambda: self._finish_kmeans(
-                X_sample.copy(), 
+                X_viz.copy(), 
                 labels.copy(), 
-                kmeans.cluster_centers_.copy(), 
-                list(feature_names), 
+                centers_viz.copy(), 
+                list(viz_labels), 
                 float(kmeans.inertia_),
-                sil_score
+                sil_score,
+                len(selected_features),
+                explained_var
             ))
         except Exception as e:
             self.after(0, lambda err=str(e): self._handle_error(err))
 
-    def _finish_kmeans(self, X, labels, centers, feature_names, inertia, sil_score):
+    def _finish_kmeans(self, X, labels, centers, viz_labels, inertia, sil_score, n_features, explained_var):
         self.progress_bar.stop()
         self.progress_bar.pack_forget()
         self.status_label.configure(text="✓ Clustering complete!")
@@ -356,26 +457,36 @@ class KMeansPage(ctk.CTkFrame):
         self.elbow_btn.configure(state="normal")
         self.is_running = False
         
+        # Update PCA label
+        if explained_var:
+            self.pca_label.configure(text=f"📐 Using PCA: {explained_var:.1f}% variance explained from {n_features} features")
+        else:
+            self.pca_label.configure(text=f"📐 Using {n_features} features directly")
+        
         # Update Insights
         self.insights_text.configure(state="normal")
         self.insights_text.delete("0.0", "end")
         self.insights_text.insert("0.0", f"K-Means Results:\n\n")
         self.insights_text.insert("end", f"Number of Clusters (k): {len(centers)}\n")
+        self.insights_text.insert("end", f"Features Used: {n_features}\n")
         self.insights_text.insert("end", f"Inertia: {inertia:.2f}\n")
         self.insights_text.insert("end", f"Silhouette Score: {sil_score:.3f}\n\n")
+        
+        if explained_var:
+            self.insights_text.insert("end", f"PCA Visualization: {explained_var:.1f}% variance explained\n\n")
         
         if sil_score > 0.5:
             self.insights_text.insert("end", "Interpretation: The clusters are well-separated and dense. This indicates a good clustering structure.\n")
         elif sil_score > 0.2:
-             self.insights_text.insert("end", "Interpretation: The clusters are reasonably separated, but there may be some overlap or the data structure is not perfectly spherical.\n")
+             self.insights_text.insert("end", "Interpretation: The clusters are reasonably separated, but there may be some overlap.\n")
         else:
-             self.insights_text.insert("end", "Interpretation: The clusters are overlapping or the data is not well-clustered. Consider changing k or preprocessing the data.\n")
+             self.insights_text.insert("end", "Interpretation: The clusters are overlapping or the data is not well-clustered. Consider changing k.\n")
         
         self.insights_text.configure(state="disabled")
         
-        self.plot_results(X, labels, centers, feature_names, inertia, sil_score)
+        self.plot_results(X, labels, centers, viz_labels, inertia, sil_score)
         
-        # Auto-switch to Visualization view to show results
+        # Auto-switch to Visualization view
         self.view_var.set("Visualization")
         self.switch_view("Visualization")
 
@@ -388,7 +499,7 @@ class KMeansPage(ctk.CTkFrame):
         self.is_running = False
         tk.messagebox.showerror("Error", f"Clustering failed: {error_msg}")
 
-    def plot_results(self, X, labels, centers, feature_names, inertia, sil_score):
+    def plot_results(self, X, labels, centers, viz_labels, inertia, sil_score):
         if self.canvas:
             self.canvas.get_tk_widget().destroy()
             
@@ -398,8 +509,8 @@ class KMeansPage(ctk.CTkFrame):
         scatter = ax.scatter(X[:, 0], X[:, 1], c=labels, cmap='viridis', alpha=0.6, s=30, edgecolors='white', linewidth=0.5)
         ax.scatter(centers[:, 0], centers[:, 1], c='red', marker='X', s=150, edgecolors='black', linewidth=1.5, label='Centroids', zorder=5)
         
-        ax.set_xlabel(feature_names[0], fontsize=10, fontweight='bold')
-        ax.set_ylabel(feature_names[1], fontsize=10, fontweight='bold')
+        ax.set_xlabel(viz_labels[0], fontsize=10, fontweight='bold')
+        ax.set_ylabel(viz_labels[1], fontsize=10, fontweight='bold')
         ax.set_title(f'K-Means (k={len(centers)})\nInertia={inertia:.2f}, Silhouette={sil_score:.3f}', fontsize=12, fontweight='bold', pad=10)
         ax.legend(frameon=True, shadow=True, fontsize=9)
         ax.grid(True, alpha=0.2, linestyle='--')
@@ -418,15 +529,11 @@ class KMeansPage(ctk.CTkFrame):
         if df is None:
             tk.messagebox.showwarning("No Data", "Please load a dataset first.")
             return
-            
-        numeric_df = df.select_dtypes(include=[np.number])
-        x_col = self.x_axis_var.get()
-        y_col = self.y_axis_var.get()
         
-        if not x_col or not y_col:
-            self.update_feature_options()
-            x_col = self.x_axis_var.get()
-            y_col = self.y_axis_var.get()
+        selected_features = self.get_selected_features()
+        if len(selected_features) < 2:
+            tk.messagebox.showwarning("Insufficient Features", "Please select at least 2 features.")
+            return
             
         self.is_running = True
         self.progress_bar.pack(fill="x", pady=(0, 10))
@@ -436,23 +543,28 @@ class KMeansPage(ctk.CTkFrame):
         self.run_btn.configure(state="disabled")
         self.elbow_btn.configure(state="disabled")
         
-        thread = threading.Thread(target=self._run_elbow_thread, args=(numeric_df, x_col, y_col))
+        thread = threading.Thread(target=self._run_elbow_thread, args=(df, selected_features))
         thread.daemon = True
         thread.start()
 
-    def _run_elbow_thread(self, numeric_df, x_col, y_col):
+    def _run_elbow_thread(self, df, selected_features):
         try:
-            X = numeric_df[[x_col, y_col]].values
+            X = df[selected_features].values
+            X = np.nan_to_num(X, nan=np.nanmean(X, axis=0))
+            
             if len(X) > 3000:
                 idx = np.random.choice(len(X), 3000, replace=False)
                 X = X[idx]
+            
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
                 
             inertias = []
             K = range(1, 11)
             
             for k in K:
                 kmeans = KMeans(n_clusters=k, n_init=5, random_state=42)
-                kmeans.fit(X)
+                kmeans.fit(X_scaled)
                 inertias.append(kmeans.inertia_)
                 
             self.after(0, lambda: self._finish_elbow(K, inertias))
@@ -489,13 +601,3 @@ class KMeansPage(ctk.CTkFrame):
         # Auto-switch to Visualization view
         self.view_var.set("Visualization")
         self.switch_view("Visualization")
-
-    def _handle_error(self, error_msg):
-        self.progress_bar.stop()
-        self.progress_bar.pack_forget()
-        self.status_label.pack_forget()
-        self.run_btn.configure(state="normal", text="Run Clustering")
-        self.is_running = False
-        tk.messagebox.showerror("Error", f"Clustering failed: {error_msg}")
-
-

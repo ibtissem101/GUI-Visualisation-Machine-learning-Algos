@@ -4,6 +4,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 from scipy.cluster.hierarchy import dendrogram, linkage
 import pandas as pd
 import numpy as np
@@ -16,6 +18,7 @@ class HierarchicalPage(ctk.CTkFrame):
         self.figure = None
         self.canvas = None
         self.is_running = False
+        self.selected_features = []
         
         self.setup_ui()
         
@@ -32,7 +35,7 @@ class HierarchicalPage(ctk.CTkFrame):
         
         subtitle = ctk.CTkLabel(
             self,
-            text="Builds a hierarchy of clusters using agglomerative (bottom-up) approach.",
+            text="Agglomerative clustering builds a hierarchy of clusters by progressively merging the closest clusters.",
             font=("Segoe UI", 14),
             text_color="#64748B",
             anchor="w"
@@ -64,9 +67,11 @@ class HierarchicalPage(ctk.CTkFrame):
             border_color="#E2E8F0"
         )
         
-        # Controls container
-        controls_inner = ctk.CTkFrame(self.params_frame, fg_color="transparent")
-        controls_inner.pack(fill="both", expand=True, padx=40, pady=40)
+        params_scroll = ctk.CTkScrollableFrame(self.params_frame, fg_color="transparent")
+        params_scroll.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        controls_inner = ctk.CTkFrame(params_scroll, fg_color="transparent")
+        controls_inner.pack(fill="both", expand=True, padx=20, pady=0)
         
         ctk.CTkLabel(
             controls_inner, 
@@ -76,50 +81,45 @@ class HierarchicalPage(ctk.CTkFrame):
             anchor="w"
         ).pack(fill="x", pady=(0, 20))
         
-        # Grid layout
         grid_frame = ctk.CTkFrame(controls_inner, fg_color="transparent")
         grid_frame.pack(fill="x", pady=(0, 20))
         grid_frame.grid_columnconfigure(0, weight=1)
         grid_frame.grid_columnconfigure(1, weight=1)
         
         # Number of Clusters
-        ctk.CTkLabel(grid_frame, text="Number of Clusters (k)", text_color="#475569", font=("Segoe UI", 12), anchor="w").grid(row=0, column=0, padx=10, pady=(0, 5), sticky="w")
-        self.k_entry = ctk.CTkEntry(grid_frame, placeholder_text="Enter k value", height=36, font=("Segoe UI", 12))
-        self.k_entry.insert(0, "3")
-        self.k_entry.grid(row=1, column=0, padx=10, pady=(0, 20), sticky="ew")
+        ctk.CTkLabel(grid_frame, text="Number of Clusters", text_color="#475569", font=("Segoe UI", 12), anchor="w").grid(row=0, column=0, padx=10, pady=(0, 5), sticky="w")
+        self.n_clusters_entry = ctk.CTkEntry(grid_frame, placeholder_text="Enter value", height=36, font=("Segoe UI", 12))
+        self.n_clusters_entry.insert(0, "3")
+        self.n_clusters_entry.grid(row=1, column=0, padx=10, pady=(0, 20), sticky="ew")
         
-        # Linkage
+        # Linkage Method
         ctk.CTkLabel(grid_frame, text="Linkage Method", text_color="#475569", font=("Segoe UI", 12), anchor="w").grid(row=0, column=1, padx=10, pady=(0, 5), sticky="w")
         self.linkage_var = ctk.StringVar(value="ward")
         self.linkage_menu = ctk.CTkOptionMenu(
             grid_frame,
             values=["ward", "complete", "average", "single"],
             variable=self.linkage_var,
-            fg_color="#F1F5F9",
-            text_color="#1E293B",
-            button_color="#CBD5E1",
-            button_hover_color="#94A3B8",
             height=36,
-            font=("Segoe UI", 12)
+            font=("Segoe UI", 12),
+            fg_color="#F1F5F9",
+            text_color="#1E293B"
         )
         self.linkage_menu.grid(row=1, column=1, padx=10, pady=(0, 20), sticky="ew")
 
-        # Metric
-        ctk.CTkLabel(grid_frame, text="Metric", text_color="#475569", font=("Segoe UI", 12), anchor="w").grid(row=2, column=0, padx=10, pady=(0, 5), sticky="w")
+        # Distance Metric
+        ctk.CTkLabel(grid_frame, text="Distance Metric", text_color="#475569", font=("Segoe UI", 12), anchor="w").grid(row=2, column=0, padx=10, pady=(0, 5), sticky="w")
         self.metric_var = ctk.StringVar(value="euclidean")
         self.metric_menu = ctk.CTkOptionMenu(
             grid_frame,
-            values=["euclidean", "l1", "l2", "manhattan", "cosine"],
+            values=["euclidean", "manhattan", "cosine"],
             variable=self.metric_var,
-            fg_color="#F1F5F9",
-            text_color="#1E293B",
-            button_color="#CBD5E1",
-            button_hover_color="#94A3B8",
             height=36,
-            font=("Segoe UI", 12)
+            font=("Segoe UI", 12),
+            fg_color="#F1F5F9",
+            text_color="#1E293B"
         )
         self.metric_menu.grid(row=3, column=0, padx=10, pady=(0, 20), sticky="ew")
-        
+
         # Feature Selection
         ctk.CTkLabel(
             controls_inner, 
@@ -127,30 +127,48 @@ class HierarchicalPage(ctk.CTkFrame):
             font=("Segoe UI", 16, "bold"), 
             text_color="#1E293B",
             anchor="w"
-        ).pack(fill="x", pady=(10, 10))
+        ).pack(fill="x", pady=(10, 5))
         
-        fs_frame = ctk.CTkFrame(controls_inner, fg_color="transparent")
-        fs_frame.pack(fill="x", pady=(0, 20))
-        fs_frame.grid_columnconfigure(0, weight=1)
-        fs_frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(
+            controls_inner, 
+            text="Select multiple features for clustering. Visualization uses PCA if more than 2 features selected.",
+            font=("Segoe UI", 11),
+            text_color="#64748B",
+            anchor="w"
+        ).pack(fill="x", pady=(0, 10))
         
-        ctk.CTkLabel(fs_frame, text="X Axis:", text_color="#475569", font=("Segoe UI", 12), anchor="w").grid(row=0, column=0, padx=10, pady=(0, 5), sticky="w")
-        self.x_axis_var = ctk.StringVar(value="")
-        self.x_axis_menu = ctk.CTkOptionMenu(fs_frame, variable=self.x_axis_var, values=["Load Data First"])
-        self.x_axis_menu.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+        self.features_frame = ctk.CTkFrame(controls_inner, fg_color="#F9FAFB", corner_radius=8)
+        self.features_frame.pack(fill="x", pady=(0, 10))
         
-        ctk.CTkLabel(fs_frame, text="Y Axis:", text_color="#475569", font=("Segoe UI", 12), anchor="w").grid(row=0, column=1, padx=10, pady=(0, 5), sticky="w")
-        self.y_axis_var = ctk.StringVar(value="")
-        self.y_axis_menu = ctk.CTkOptionMenu(fs_frame, variable=self.y_axis_var, values=["Load Data First"])
-        self.y_axis_menu.grid(row=1, column=1, padx=10, pady=(0, 10), sticky="ew")
+        self.feature_vars = {}
+        self.feature_checkboxes_frame = ctk.CTkFrame(self.features_frame, fg_color="transparent")
+        self.feature_checkboxes_frame.pack(fill="x", padx=15, pady=15)
         
-        # Update features button (hidden, called automatically when data loaded)
+        btn_row = ctk.CTkFrame(controls_inner, fg_color="transparent")
+        btn_row.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkButton(
+            btn_row, text="Select All", width=100, height=28,
+            font=("Segoe UI", 11), fg_color="#64748B", hover_color="#475569",
+            command=self.select_all_features
+        ).pack(side="left", padx=(0, 10))
+        
+        ctk.CTkButton(
+            btn_row, text="Deselect All", width=100, height=28,
+            font=("Segoe UI", 11), fg_color="#64748B", hover_color="#475569",
+            command=self.deselect_all_features
+        ).pack(side="left")
+        
+        self.features_count_label = ctk.CTkLabel(
+            btn_row, text="0 features selected", 
+            font=("Segoe UI", 11), text_color="#64748B"
+        )
+        self.features_count_label.pack(side="right")
+        
         self.bind("<Visibility>", self.update_feature_options)
 
-        # Progress bar
         self.progress_bar = ctk.CTkProgressBar(controls_inner, mode="indeterminate")
         
-        # Buttons
         btn_frame = ctk.CTkFrame(controls_inner, fg_color="transparent")
         btn_frame.pack(fill="x", pady=(20, 0))
         
@@ -177,7 +195,6 @@ class HierarchicalPage(ctk.CTkFrame):
             border_color="#E2E8F0"
         )
         
-        # Visualization controls at top
         viz_controls = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
         viz_controls.pack(fill="x", padx=20, pady=(20, 10))
         
@@ -193,11 +210,14 @@ class HierarchicalPage(ctk.CTkFrame):
         )
         self.dendro_btn.pack(side="left")
         
-        # Plot container
+        self.pca_label = ctk.CTkLabel(
+            viz_controls, text="", font=("Segoe UI", 11), text_color="#64748B"
+        )
+        self.pca_label.pack(side="right")
+        
         self.plot_container = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
         self.plot_container.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         
-        # Placeholder for viz
         self.plot_placeholder()
         
         # --- Insights View ---
@@ -213,7 +233,6 @@ class HierarchicalPage(ctk.CTkFrame):
         self.insights_text.insert("0.0", "Run the algorithm to generate insights.")
         self.insights_text.configure(state="disabled")
 
-        # Initialize view
         self.switch_view("Parameters")
 
     def switch_view(self, view_name):
@@ -245,65 +264,98 @@ class HierarchicalPage(ctk.CTkFrame):
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def update_feature_options(self, event=None):
-        df = self.app.get_dataframe()
-        if df is not None:
-            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-            if numeric_cols:
-                self.x_axis_menu.configure(values=numeric_cols)
-                self.y_axis_menu.configure(values=numeric_cols)
-                if not self.x_axis_var.get() or self.x_axis_var.get() not in numeric_cols:
-                    self.x_axis_var.set(numeric_cols[0])
-                if len(numeric_cols) > 1:
-                    if not self.y_axis_var.get() or self.y_axis_var.get() not in numeric_cols:
-                        self.y_axis_var.set(numeric_cols[1])
-                else:
-                    self.y_axis_var.set(numeric_cols[0])
-
-    def get_data(self):
+        for widget in self.feature_checkboxes_frame.winfo_children():
+            widget.destroy()
+        self.feature_vars.clear()
+        
         df = self.app.get_dataframe()
         if df is None:
-            tk.messagebox.showwarning("No Data", "Please load a dataset first from the Data Loader page.")
-            return None, None
+            ctk.CTkLabel(
+                self.feature_checkboxes_frame,
+                text="⚠️ Please load a dataset first from the Data Loader page",
+                font=("Segoe UI", 12),
+                text_color="#64748B"
+            ).pack(pady=10)
+            self.features_count_label.configure(text="No data loaded")
+            return
             
-        numeric_df = df.select_dtypes(include=[np.number])
-        if numeric_df.shape[1] < 2:
-            tk.messagebox.showwarning("Insufficient Data", "Dataset needs at least 2 numeric columns.")
-            return None, None
-            
-        x_col = self.x_axis_var.get()
-        y_col = self.y_axis_var.get()
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         
-        if not x_col or not y_col:
-            self.update_feature_options()
-            x_col = self.x_axis_var.get()
-            y_col = self.y_axis_var.get()
+        if not numeric_cols:
+            ctk.CTkLabel(
+                self.feature_checkboxes_frame,
+                text="⚠️ No numeric columns found in dataset",
+                font=("Segoe UI", 12),
+                text_color="#64748B"
+            ).pack(pady=10)
+            self.features_count_label.configure(text="No numeric columns")
+            return
+        
+        for i, col in enumerate(numeric_cols):
+            var = ctk.BooleanVar(value=i < 2)
+            self.feature_vars[col] = var
             
-        return numeric_df[[x_col, y_col]].values, [x_col, y_col]
+            cb = ctk.CTkCheckBox(
+                self.feature_checkboxes_frame,
+                text=col[:20] + "..." if len(col) > 20 else col,
+                variable=var,
+                font=("Segoe UI", 11),
+                fg_color="#3B82F6",
+                command=self.update_feature_count
+            )
+            row = i // 3
+            col_idx = i % 3
+            cb.grid(row=row, column=col_idx, padx=10, pady=5, sticky="w")
+        
+        self.update_feature_count()
+    
+    def update_feature_count(self):
+        count = sum(1 for var in self.feature_vars.values() if var.get())
+        self.features_count_label.configure(text=f"{count} features selected")
+    
+    def select_all_features(self):
+        for var in self.feature_vars.values():
+            var.set(True)
+        self.update_feature_count()
+    
+    def deselect_all_features(self):
+        for var in self.feature_vars.values():
+            var.set(False)
+        self.update_feature_count()
+    
+    def get_selected_features(self):
+        return [col for col, var in self.feature_vars.items() if var.get()]
 
     def run_clustering(self):
         if self.is_running:
             return
             
-        X, feature_names = self.get_data()
-        if X is None: return
+        df = self.app.get_dataframe()
+        if df is None:
+            tk.messagebox.showwarning("No Data", "Please load a dataset first from the Data Loader page.")
+            return
         
+        selected_features = self.get_selected_features()
+        if len(selected_features) < 2:
+            tk.messagebox.showwarning("Insufficient Features", "Please select at least 2 features for clustering.")
+            return
+            
         try:
-            k = int(self.k_entry.get())
-            if k < 2:
+            n_clusters = int(self.n_clusters_entry.get())
+            linkage_method = self.linkage_var.get()
+            metric = self.metric_var.get()
+            
+            # Ward only works with euclidean
+            if linkage_method == "ward" and metric != "euclidean":
+                metric = "euclidean"
+            
+            if n_clusters < 2:
                 tk.messagebox.showerror("Invalid Input", "Number of clusters must be at least 2.")
                 return
         except ValueError:
-            tk.messagebox.showerror("Invalid Input", "Number of clusters must be an integer.")
+            tk.messagebox.showerror("Invalid Input", "Please enter valid integers for parameters.")
             return
-            
-        linkage_method = self.linkage_var.get()
-        metric = self.metric_var.get()
         
-        if linkage_method == 'ward' and metric != 'euclidean':
-             tk.messagebox.showwarning("Invalid Combination", "Ward linkage only supports Euclidean metric. Using Euclidean.")
-             metric = 'euclidean'
-        
-        # Show progress
         self.is_running = True
         self.progress_bar.pack(fill="x", pady=(0, 10))
         self.progress_bar.start()
@@ -312,63 +364,56 @@ class HierarchicalPage(ctk.CTkFrame):
         self.run_btn.configure(state="disabled", text="Running...")
         self.dendro_btn.configure(state="disabled")
         
-        # Run in thread
-        thread = threading.Thread(target=self._run_clustering_thread, args=(X, k, linkage_method, metric, feature_names))
+        thread = threading.Thread(target=self._run_clustering_thread, args=(df, n_clusters, linkage_method, metric, selected_features))
         thread.daemon = True
         thread.start()
 
-    def _run_clustering_thread(self, X, k, linkage_method, metric, feature_names):
+    def _run_clustering_thread(self, df, n_clusters, linkage_method, metric, selected_features):
         try:
-            # Sample if large
-            if len(X) > 3000:  # Lower threshold for hierarchical
-                sample_idx = np.random.choice(len(X), 3000, replace=False)
+            X = df[selected_features].values
+            X = np.nan_to_num(X, nan=np.nanmean(X, axis=0))
+            
+            if len(X) > 5000:
+                sample_idx = np.random.choice(len(X), 5000, replace=False)
                 X_sample = X[sample_idx]
             else:
                 X_sample = X
             
-            # Use metric parameter (compatible with newer sklearn)
-            model = AgglomerativeClustering(n_clusters=k, linkage=linkage_method, metric=metric)
-            labels = model.fit_predict(X_sample)
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X_sample)
             
-            # Calculate Silhouette Score
+            model = AgglomerativeClustering(
+                n_clusters=n_clusters,
+                linkage=linkage_method,
+                metric=metric if linkage_method != "ward" else "euclidean"
+            )
+            labels = model.fit_predict(X_scaled)
+            
             if len(set(labels)) > 1:
-                sil_score = silhouette_score(X_sample, labels)
+                sil_score = silhouette_score(X_scaled, labels)
             else:
                 sil_score = -1.0
             
+            # PCA for visualization
+            if len(selected_features) > 2:
+                pca = PCA(n_components=2)
+                X_viz = pca.fit_transform(X_scaled)
+                explained_var = sum(pca.explained_variance_ratio_) * 100
+                viz_labels = [f"PC1 ({pca.explained_variance_ratio_[0]*100:.1f}%)", 
+                             f"PC2 ({pca.explained_variance_ratio_[1]*100:.1f}%)"]
+            else:
+                X_viz = X_sample
+                explained_var = None
+                viz_labels = selected_features[:2]
+            
             self.after(0, lambda: self._finish_clustering(
-                X_sample.copy(), 
-                labels.copy(), 
-                list(feature_names), 
-                linkage_method,
-                sil_score
+                X_viz.copy(), labels.copy(), list(viz_labels), 
+                linkage_method, sil_score, len(selected_features), explained_var
             ))
         except Exception as e:
-            # Fallback for older sklearn versions if 'metric' fails (try 'affinity')
-            if "unexpected keyword argument 'metric'" in str(e):
-                try:
-                    model = AgglomerativeClustering(n_clusters=k, linkage=linkage_method, affinity=metric)
-                    labels = model.fit_predict(X_sample)
-                    
-                    if len(set(labels)) > 1:
-                        sil_score = silhouette_score(X_sample, labels)
-                    else:
-                        sil_score = -1.0
-                        
-                    self.after(0, lambda: self._finish_clustering(
-                        X_sample.copy(), 
-                        labels.copy(), 
-                        list(feature_names), 
-                        linkage_method,
-                        sil_score
-                    ))
-                    return
-                except Exception as e2:
-                    self.after(0, lambda err=str(e2): self._handle_error(err))
-            else:
-                self.after(0, lambda err=str(e): self._handle_error(err))
+            self.after(0, lambda err=str(e): self._handle_error(err))
 
-    def _finish_clustering(self, X, labels, feature_names, linkage_method, sil_score):
+    def _finish_clustering(self, X, labels, viz_labels, linkage_method, sil_score, n_features, explained_var):
         self.progress_bar.stop()
         self.progress_bar.pack_forget()
         self.status_label.configure(text="✓ Clustering complete!")
@@ -377,25 +422,32 @@ class HierarchicalPage(ctk.CTkFrame):
         self.dendro_btn.configure(state="normal")
         self.is_running = False
         
-        # Update Insights
+        if explained_var:
+            self.pca_label.configure(text=f"📐 Using PCA: {explained_var:.1f}% variance explained from {n_features} features")
+        else:
+            self.pca_label.configure(text=f"📐 Using {n_features} features directly")
+        
         self.insights_text.configure(state="normal")
         self.insights_text.delete("0.0", "end")
         self.insights_text.insert("0.0", f"Hierarchical Clustering Results:\n\n")
         self.insights_text.insert("end", f"Linkage Method: {linkage_method}\n")
+        self.insights_text.insert("end", f"Features Used: {n_features}\n")
         self.insights_text.insert("end", f"Silhouette Score: {sil_score:.3f}\n\n")
+        
+        if explained_var:
+            self.insights_text.insert("end", f"PCA Visualization: {explained_var:.1f}% variance explained\n\n")
         
         if sil_score > 0.5:
             self.insights_text.insert("end", "Interpretation: The clusters are well-separated and dense.\n")
         elif sil_score > 0.2:
-             self.insights_text.insert("end", "Interpretation: The clusters are reasonably separated, but there may be some overlap.\n")
+             self.insights_text.insert("end", "Interpretation: The clusters are reasonably separated.\n")
         else:
-             self.insights_text.insert("end", "Interpretation: The clusters are overlapping or the data is not well-clustered.\n")
+             self.insights_text.insert("end", "Interpretation: The clusters are overlapping.\n")
         
         self.insights_text.configure(state="disabled")
         
-        self.plot_scatter(X, labels, feature_names, linkage_method, sil_score)
+        self.plot_scatter(X, labels, viz_labels, linkage_method, sil_score)
         
-        # Auto-switch to Visualization view to show results
         self.view_var.set("Visualization")
         self.switch_view("Visualization")
 
@@ -409,38 +461,46 @@ class HierarchicalPage(ctk.CTkFrame):
         tk.messagebox.showerror("Error", f"Clustering failed: {error_msg}")
 
     def show_dendrogram(self):
-        X, _ = self.get_data()
-        if X is None: return
+        if self.is_running: return
         
-        # Compute linkage matrix
-        if len(X) > 1000:
-             if not tk.messagebox.askyesno("Large Dataset", "Dataset is large (>1000 samples). Dendrogram might take a while. Continue?"):
-                 return
-             # Sample for performance
-             sample_idx = np.random.choice(len(X), 1000, replace=False)
-             X = X[sample_idx]
+        df = self.app.get_dataframe()
+        if df is None:
+            tk.messagebox.showwarning("No Data", "Please load a dataset first.")
+            return
         
+        selected_features = self.get_selected_features()
+        if len(selected_features) < 2:
+            tk.messagebox.showwarning("Insufficient Features", "Please select at least 2 features.")
+            return
+            
         self.is_running = True
         self.progress_bar.pack(fill="x", pady=(0, 10))
         self.progress_bar.start()
-        self.status_label.configure(text="Calculating Dendrogram...")
+        self.status_label.configure(text="Generating Dendrogram...")
         self.status_label.pack(fill="x", pady=(0, 10))
         self.run_btn.configure(state="disabled")
         self.dendro_btn.configure(state="disabled")
         
-        metric = self.metric_var.get()
-        method = self.linkage_var.get()
-        
-        if method == 'ward' and metric != 'euclidean':
-             metric = 'euclidean'
-             
-        thread = threading.Thread(target=self._run_dendrogram_thread, args=(X, method, metric))
+        thread = threading.Thread(target=self._run_dendrogram_thread, args=(df, selected_features))
         thread.daemon = True
         thread.start()
 
-    def _run_dendrogram_thread(self, X, method, metric):
+    def _run_dendrogram_thread(self, df, selected_features):
         try:
-            Z = linkage(X, method=method, metric=metric)
+            X = df[selected_features].values
+            X = np.nan_to_num(X, nan=np.nanmean(X, axis=0))
+            
+            # Limit samples for dendrogram
+            if len(X) > 1000:
+                idx = np.random.choice(len(X), 1000, replace=False)
+                X = X[idx]
+            
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            linkage_method = self.linkage_var.get()
+            Z = linkage(X_scaled, method=linkage_method)
+            
             self.after(0, lambda: self._finish_dendrogram(Z))
         except Exception as e:
             self.after(0, lambda err=str(e): self._handle_error(err))
@@ -472,11 +532,10 @@ class HierarchicalPage(ctk.CTkFrame):
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
         
-        # Auto-switch to Visualization view
         self.view_var.set("Visualization")
         self.switch_view("Visualization")
 
-    def plot_scatter(self, X, labels, feature_names, linkage_method, sil_score):
+    def plot_scatter(self, X, labels, viz_labels, linkage_method, sil_score):
         if self.canvas:
             self.canvas.get_tk_widget().destroy()
             
@@ -485,8 +544,8 @@ class HierarchicalPage(ctk.CTkFrame):
         
         scatter = ax.scatter(X[:, 0], X[:, 1], c=labels, cmap='viridis', alpha=0.6, s=30, edgecolors='white', linewidth=0.5)
         
-        ax.set_xlabel(feature_names[0], fontsize=10, fontweight='bold')
-        ax.set_ylabel(feature_names[1], fontsize=10, fontweight='bold')
+        ax.set_xlabel(viz_labels[0], fontsize=10, fontweight='bold')
+        ax.set_ylabel(viz_labels[1], fontsize=10, fontweight='bold')
         ax.set_title(f'Hierarchical ({linkage_method})\nSilhouette={sil_score:.3f}', fontsize=12, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.2, linestyle='--')
         ax.set_facecolor('#FAFAFA')
