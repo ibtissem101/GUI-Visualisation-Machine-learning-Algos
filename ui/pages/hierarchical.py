@@ -177,7 +177,7 @@ class HierarchicalPage(ctk.CTkFrame):
         if self.canvas:
             self.canvas.get_tk_widget().destroy()
             
-        fig = Figure(figsize=(8, 6), dpi=100, facecolor='white')
+        fig = Figure(figsize=(6, 4.5), dpi=100, facecolor='white')
         ax = fig.add_subplot(111)
         ax.text(0.5, 0.5, 'Load data and run clustering\nto see results', 
                 horizontalalignment='center', verticalalignment='center',
@@ -192,7 +192,7 @@ class HierarchicalPage(ctk.CTkFrame):
         
         self.canvas = FigureCanvasTkAgg(fig, master=self.viz_panel)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=15, pady=15)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
 
     def get_data(self):
         df = self.app.get_dataframe()
@@ -241,11 +241,18 @@ class HierarchicalPage(ctk.CTkFrame):
 
     def _run_clustering_thread(self, X, k, linkage_method, feature_names):
         try:
+            # Sample if large
+            if len(X) > 3000:  # Lower threshold for hierarchical
+                sample_idx = np.random.choice(len(X), 3000, replace=False)
+                X_sample = X[sample_idx]
+            else:
+                X_sample = X
+            
             model = AgglomerativeClustering(n_clusters=k, linkage=linkage_method)
-            labels = model.fit_predict(X)
+            labels = model.fit_predict(X_sample)
             
             self.after(0, lambda: self._finish_clustering(
-                X.copy(), 
+                X_sample.copy(), 
                 labels.copy(), 
                 list(feature_names), 
                 linkage_method
@@ -281,45 +288,48 @@ class HierarchicalPage(ctk.CTkFrame):
         if len(X) > 1000:
              if not tk.messagebox.askyesno("Large Dataset", "Dataset is large (>1000 samples). Dendrogram might take a while. Continue?"):
                  return
+             # Sample for performance
+             sample_idx = np.random.choice(len(X), 1000, replace=False)
+             X = X[sample_idx]
                  
         Z = linkage(X, method=self.linkage_var.get())
         
         if self.canvas:
             self.canvas.get_tk_widget().destroy()
             
-        fig = Figure(figsize=(8, 6), dpi=100, facecolor='white')
+        fig = Figure(figsize=(6, 4.5), dpi=100, facecolor='white')
         ax = fig.add_subplot(111)
         
         dendrogram(Z, ax=ax, truncate_mode='level', p=5, color_threshold=0.7*max(Z[:,2]))
-        ax.set_title("Hierarchical Clustering Dendrogram", fontsize=13, fontweight='bold', pad=15)
-        ax.set_xlabel("Sample Index / Cluster Size", fontsize=11, fontweight='bold')
-        ax.set_ylabel("Distance", fontsize=11, fontweight='bold')
+        ax.set_title("Hierarchical Dendrogram", fontsize=12, fontweight='bold', pad=10)
+        ax.set_xlabel("Sample Index / Cluster Size", fontsize=10, fontweight='bold')
+        ax.set_ylabel("Distance", fontsize=10, fontweight='bold')
         ax.grid(True, alpha=0.2, linestyle='--', axis='y')
         ax.set_facecolor('#FAFAFA')
         
-        fig.tight_layout()
+        fig.tight_layout(pad=1.5)
         
         self.canvas = FigureCanvasTkAgg(fig, master=self.viz_panel)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=15, pady=15)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
 
     def plot_scatter(self, X, labels, feature_names, linkage_method):
         if self.canvas:
             self.canvas.get_tk_widget().destroy()
             
-        fig = Figure(figsize=(8, 6), dpi=100, facecolor='white')
+        fig = Figure(figsize=(6, 4.5), dpi=100, facecolor='white')
         ax = fig.add_subplot(111)
         
-        scatter = ax.scatter(X[:, 0], X[:, 1], c=labels, cmap='viridis', alpha=0.6, s=50, edgecolors='white', linewidth=0.5)
+        scatter = ax.scatter(X[:, 0], X[:, 1], c=labels, cmap='viridis', alpha=0.6, s=30, edgecolors='white', linewidth=0.5)
         
-        ax.set_xlabel(feature_names[0], fontsize=11, fontweight='bold')
-        ax.set_ylabel(feature_names[1], fontsize=11, fontweight='bold')
-        ax.set_title(f'Hierarchical Clustering ({linkage_method} linkage)', fontsize=13, fontweight='bold', pad=15)
+        ax.set_xlabel(feature_names[0], fontsize=10, fontweight='bold')
+        ax.set_ylabel(feature_names[1], fontsize=10, fontweight='bold')
+        ax.set_title(f'Hierarchical ({linkage_method} linkage)', fontsize=12, fontweight='bold', pad=10)
         ax.grid(True, alpha=0.2, linestyle='--')
         ax.set_facecolor('#FAFAFA')
         
-        fig.tight_layout()
+        fig.tight_layout(pad=1.5)
         
         self.canvas = FigureCanvasTkAgg(fig, master=self.viz_panel)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=15, pady=15)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)

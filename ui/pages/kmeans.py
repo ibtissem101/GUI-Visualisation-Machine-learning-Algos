@@ -159,7 +159,7 @@ class KMeansPage(ctk.CTkFrame):
         if self.canvas:
             self.canvas.get_tk_widget().destroy()
             
-        fig = Figure(figsize=(8, 6), dpi=100, facecolor='white')
+        fig = Figure(figsize=(6, 4.5), dpi=100, facecolor='white')
         ax = fig.add_subplot(111)
         ax.text(0.5, 0.5, 'Load data and run clustering\nto see results', 
                 horizontalalignment='center', verticalalignment='center',
@@ -174,7 +174,7 @@ class KMeansPage(ctk.CTkFrame):
         
         self.canvas = FigureCanvasTkAgg(fig, master=self.viz_panel)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=15, pady=15)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
 
     def run_kmeans(self):
         if self.is_running:
@@ -221,12 +221,27 @@ class KMeansPage(ctk.CTkFrame):
             X = numeric_df.iloc[:, :2].values
             feature_names = numeric_df.columns[:2]
             
-            kmeans = KMeans(n_clusters=k, n_init=10, max_iter=max_iter, random_state=42)
-            labels = kmeans.fit_predict(X)
+            # Sample if dataset is large for faster processing
+            if len(X) > 5000:
+                sample_idx = np.random.choice(len(X), 5000, replace=False)
+                X_sample = X[sample_idx]
+            else:
+                X_sample = X
+            
+            # Optimize: reduce n_init and use algorithm='elkan' for speed
+            kmeans = KMeans(
+                n_clusters=k, 
+                n_init=3,  # Reduced from 10
+                max_iter=min(max_iter, 100),  # Cap at 100
+                algorithm='elkan',  # Faster for well-defined clusters
+                random_state=42,
+
+            )
+            labels = kmeans.fit_predict(X_sample)
             
             # Schedule UI update on main thread with results
             self.after(0, lambda: self._finish_kmeans(
-                X.copy(), 
+                X_sample.copy() if len(X) > 5000 else X.copy(), 
                 labels.copy(), 
                 kmeans.cluster_centers_.copy(), 
                 list(feature_names), 
@@ -257,21 +272,21 @@ class KMeansPage(ctk.CTkFrame):
         if self.canvas:
             self.canvas.get_tk_widget().destroy()
             
-        fig = Figure(figsize=(8, 6), dpi=100, facecolor='white')
+        fig = Figure(figsize=(6, 4.5), dpi=100, facecolor='white')
         ax = fig.add_subplot(111)
         
-        scatter = ax.scatter(X[:, 0], X[:, 1], c=labels, cmap='viridis', alpha=0.6, s=50, edgecolors='white', linewidth=0.5)
-        ax.scatter(centers[:, 0], centers[:, 1], c='red', marker='X', s=200, edgecolors='black', linewidth=1.5, label='Centroids', zorder=5)
+        scatter = ax.scatter(X[:, 0], X[:, 1], c=labels, cmap='viridis', alpha=0.6, s=30, edgecolors='white', linewidth=0.5)
+        ax.scatter(centers[:, 0], centers[:, 1], c='red', marker='X', s=150, edgecolors='black', linewidth=1.5, label='Centroids', zorder=5)
         
-        ax.set_xlabel(feature_names[0], fontsize=11, fontweight='bold')
-        ax.set_ylabel(feature_names[1], fontsize=11, fontweight='bold')
-        ax.set_title(f'K-Means Clustering (k={len(centers)}, Inertia={inertia:.2f})', fontsize=13, fontweight='bold', pad=15)
-        ax.legend(frameon=True, shadow=True)
+        ax.set_xlabel(feature_names[0], fontsize=10, fontweight='bold')
+        ax.set_ylabel(feature_names[1], fontsize=10, fontweight='bold')
+        ax.set_title(f'K-Means (k={len(centers)}, Inertia={inertia:.2f})', fontsize=12, fontweight='bold', pad=10)
+        ax.legend(frameon=True, shadow=True, fontsize=9)
         ax.grid(True, alpha=0.2, linestyle='--')
         ax.set_facecolor('#FAFAFA')
         
-        fig.tight_layout()
+        fig.tight_layout(pad=1.5)
         
         self.canvas = FigureCanvasTkAgg(fig, master=self.viz_panel)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=15, pady=15)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)

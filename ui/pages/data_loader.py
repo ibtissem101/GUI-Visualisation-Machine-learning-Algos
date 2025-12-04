@@ -11,9 +11,9 @@ class DropZone(ctk.CTkFrame):
         super().__init__(master)
         self.load_callback = load_callback
         
-        self.configure(fg_color="white", border_width=2, border_color="#CBD5E1", corner_radius=8)
+        self.configure(fg_color="#FAFAFA", border_width=2, border_color="#D1D5DB", corner_radius=12)
         self.pack_propagate(False)
-        self.configure(height=220)
+        self.configure(height=240)
         
         self.setup_ui()
         
@@ -21,32 +21,41 @@ class DropZone(ctk.CTkFrame):
         self.inner_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.inner_frame.place(relx=0.5, rely=0.5, anchor="center")
         
+        # Icon placeholder
+        icon_label = ctk.CTkLabel(
+            self.inner_frame,
+            text="📁",
+            font=("Segoe UI", 48),
+        )
+        icon_label.pack(pady=(0, 15))
+        
         self.title = ctk.CTkLabel(
             self.inner_frame, 
             text="Load Dataset", 
-            font=("Segoe UI", 16, "bold"),
-            text_color="#1E293B"
+            font=("Segoe UI", 20, "bold"),
+            text_color="#111827"
         )
-        self.title.pack(pady=(0, 5))
+        self.title.pack(pady=(0, 8))
         
         self.desc = ctk.CTkLabel(
             self.inner_frame,
-            text="Drag & Drop your file here or Browse. Supported formats: CSV,\nJSON, XLSX.",
-            font=("Segoe UI", 12),
-            text_color="#64748B"
+            text="Drag & Drop your file here or click to browse\nSupported formats: CSV, JSON, XLSX",
+            font=("Segoe UI", 13),
+            text_color="#6B7280",
+            justify="center"
         )
-        self.desc.pack(pady=(0, 15))
+        self.desc.pack(pady=(0, 20))
         
         self.browse_btn = ctk.CTkButton(
             self.inner_frame,
             text="Browse Files",
             command=self.browse_file,
-            font=("Segoe UI", 13, "bold"),
-            fg_color="#2D5BFF",
-            hover_color="#1E40AF",
-            height=40,
-            width=140,
-            corner_radius=6
+            font=("Segoe UI", 14, "bold"),
+            fg_color="#2563EB",
+            hover_color="#1D4ED8",
+            height=44,
+            width=160,
+            corner_radius=8
         )
         self.browse_btn.pack()
 
@@ -59,7 +68,7 @@ class DropZone(ctk.CTkFrame):
 
 class TableFrame(ctk.CTkFrame):
     def __init__(self, master, df=None):
-        super().__init__(master, fg_color="white", corner_radius=8, border_width=1, border_color="#E2E8F0")
+        super().__init__(master, fg_color="white", corner_radius=12, border_width=1, border_color="#E5E7EB")
         self.df = df
         
         # Create canvas and scrollbars
@@ -80,7 +89,7 @@ class TableFrame(ctk.CTkFrame):
         self.canvas.configure(yscrollcommand=self.v_scrollbar.set, xscrollcommand=self.h_scrollbar.set)
         
         # Grid layout
-        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.canvas.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
         self.v_scrollbar.grid(row=0, column=1, sticky="ns")
         self.h_scrollbar.grid(row=1, column=0, sticky="ew")
         
@@ -109,7 +118,6 @@ class TableFrame(ctk.CTkFrame):
         self.create_table_grid(columns, data)
 
     def populate_table(self, df):
-        # Limit rows for performance
         limit = 100
         df_head = df.head(limit)
         columns = [str(c).upper() for c in df.columns]
@@ -117,7 +125,6 @@ class TableFrame(ctk.CTkFrame):
         self.create_table_grid(columns, data)
 
     def create_table_grid(self, columns, data):
-        # Clear existing
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
             
@@ -127,114 +134,129 @@ class TableFrame(ctk.CTkFrame):
                 self.scrollable_frame, 
                 text=col, 
                 font=("Segoe UI", 12, "bold"), 
-                text_color="#0F172A",
-                fg_color="#F8FAFC",
-                padx=10,
-                pady=10,
+                text_color="#374151",
+                fg_color="#F9FAFB",
+                padx=16,
+                pady=12,
                 anchor="w",
-                width=120
+                width=140
             )
-            label.grid(row=0, column=i, sticky="ew", padx=1, pady=1)
+            label.grid(row=0, column=i, sticky="ew", padx=(0, 1), pady=(0, 1))
             
         # Data
         for r, row in enumerate(data):
             for c, val in enumerate(row):
                 if val == "nan": val = ""
+                bg = "white" if r % 2 == 0 else "#FAFAFA"
                 label = ctk.CTkLabel(
                     self.scrollable_frame,
                     text=val,
                     font=("Segoe UI", 12),
-                    text_color="#475569",
-                    padx=10,
-                    pady=8,
+                    text_color="#4B5563",
+                    fg_color=bg,
+                    padx=16,
+                    pady=10,
                     anchor="w",
-                    width=120
+                    width=140
                 )
-                label.grid(row=r+1, column=c, sticky="ew", padx=1, pady=(0, 1))
+                label.grid(row=r+1, column=c, sticky="ew", padx=(0, 1), pady=(0, 1))
 
 class DataLoaderPage(ctk.CTkFrame):
     def __init__(self, master, app_instance):
-        super().__init__(master, fg_color="#F5F5F5", corner_radius=0)
+        super().__init__(master, fg_color="#F9FAFB", corner_radius=0)
         self.app = app_instance
         self.preprocessing_options = {}
         self.setup_ui()
         
     def setup_ui(self):
-        # Header
+        # Header with better spacing
+        header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        header_frame.pack(padx=40, pady=(40, 0), fill="x")
+        
         header = ctk.CTkLabel(
-            self,
+            header_frame,
             text="Data Loading & Preprocessing",
-            font=("Segoe UI", 26, "bold"),
-            text_color="#0F172A",
+            font=("Segoe UI", 28, "bold"),
+            text_color="#111827",
             anchor="w"
         )
-        header.pack(padx=30, pady=(30, 5), anchor="w")
+        header.pack(anchor="w")
         
         subtitle = ctk.CTkLabel(
-            self,
-            text="Load a dataset and apply cleaning steps before analysis.",
+            header_frame,
+            text="Load your dataset and apply preprocessing steps before analysis",
             font=("Segoe UI", 14),
-            text_color="#64748B",
+            text_color="#6B7280",
             anchor="w"
         )
-        subtitle.pack(padx=30, pady=(0, 20), anchor="w")
+        subtitle.pack(anchor="w", pady=(6, 0))
         
-        # Main Layout
+        # Divider
+        divider = ctk.CTkFrame(self, fg_color="#E5E7EB", height=1)
+        divider.pack(fill="x", padx=40, pady=(25, 30))
+        
+        # Main Layout with better proportions
         main_layout = ctk.CTkFrame(self, fg_color="transparent")
-        main_layout.pack(padx=30, pady=0, fill="both", expand=True)
+        main_layout.pack(padx=40, pady=0, fill="both", expand=True)
         
-        # Left Panel
+        # Left Panel (40% width)
         left_panel = self.create_left_panel(main_layout)
-        left_panel.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        left_panel.pack(side="left", fill="both", expand=False, padx=(0, 15), ipadx=280)
         
-        # Right Panel
+        # Right Panel (60% width)
         right_panel = self.create_right_panel(main_layout)
-        right_panel.pack(side="right", fill="both", expand=True, padx=(10, 0))
+        right_panel.pack(side="right", fill="both", expand=True, padx=(15, 0))
 
     def create_left_panel(self, parent):
         panel = ctk.CTkFrame(parent, fg_color="transparent")
         
         # File Input Container
         self.file_input_container = ctk.CTkFrame(panel, fg_color="transparent")
-        self.file_input_container.pack(fill="x", pady=(0, 15))
+        self.file_input_container.pack(fill="x", pady=(0, 25))
         
-        # Drop Zone (Initially packed)
+        # Drop Zone
         self.drop_zone = DropZone(self.file_input_container, self.load_file)
         self.drop_zone.pack(fill="x")
         
-        # File Widget (Initially created but not packed)
-        self.file_widget = ctk.CTkFrame(self.file_input_container, fg_color="#EFF6FF", corner_radius=6)
+        # File Widget
+        self.file_widget = ctk.CTkFrame(self.file_input_container, fg_color="white", corner_radius=10, border_width=1, border_color="#E5E7EB")
+        
+        file_inner = ctk.CTkFrame(self.file_widget, fg_color="transparent")
+        file_inner.pack(fill="x", padx=16, pady=14)
         
         self.file_label = ctk.CTkLabel(
-            self.file_widget,
+            file_inner,
             text="📄  ...",
-            text_color="#1E293B",
-            font=("Segoe UI", 13)
+            text_color="#111827",
+            font=("Segoe UI", 13, "bold")
         )
-        self.file_label.pack(side="left", padx=10, pady=10)
+        self.file_label.pack(side="left")
         
         close_btn = ctk.CTkButton(
-            self.file_widget,
-            text="✕",
-            width=24,
-            height=24,
-            fg_color="transparent",
-            text_color="#64748B",
-            hover_color="#FEE2E2",
+            file_inner,
+            text="×",
+            width=28,
+            height=28,
+            fg_color="#F3F4F6",
+            text_color="#6B7280",
+            hover_color="#E5E7EB",
+            font=("Segoe UI", 18),
+            corner_radius=6,
             command=self.clear_file
         )
-        close_btn.pack(side="right", padx=10)
+        close_btn.pack(side="right")
         
-        # Preprocessing Options
-        ctk.CTkLabel(
+        # Section Header
+        section_header = ctk.CTkLabel(
             panel,
             text="Preprocessing Options",
-            font=("Segoe UI", 15, "bold"),
-            text_color="#0F172A",
+            font=("Segoe UI", 16, "bold"),
+            text_color="#111827",
             anchor="w"
-        ).pack(fill="x", pady=(10, 5))
+        )
+        section_header.pack(fill="x", pady=(0, 16))
         
-        # Create preprocessing sections
+        # Create preprocessing sections with better spacing
         self.create_preprocess_section(panel, "Missing Values", 
             ["None", "Remove Rows", "Fill with Mean", "Fill with Median", "Fill with Mode", "Forward Fill", "Backward Fill"])
         
@@ -250,160 +272,169 @@ class DataLoaderPage(ctk.CTkFrame):
         self.create_preprocess_section(panel, "Encoding", 
             ["None", "One-Hot", "Label Encoding", "Target Encoding"])
         
-        # Progress bar for preprocessing
-        self.preprocess_progress = ctk.CTkProgressBar(panel, mode="indeterminate")
-        self.preprocess_progress.pack(fill="x", pady=(15, 5))
+        # Progress bar
+        self.preprocess_progress = ctk.CTkProgressBar(panel, mode="indeterminate", height=6)
+        self.preprocess_progress.pack(fill="x", pady=(20, 8))
         self.preprocess_progress.pack_forget()
         
         self.preprocess_status = ctk.CTkLabel(
             panel,
             text="",
-            text_color="#64748B",
-            font=("Segoe UI", 11)
+            text_color="#6B7280",
+            font=("Segoe UI", 12)
         )
-        self.preprocess_status.pack(fill="x", pady=(0, 10))
+        self.preprocess_status.pack(fill="x", pady=(0, 12))
         self.preprocess_status.pack_forget()
         
-        # Apply Button
+        # Apply Button with better prominence
         self.apply_btn = ctk.CTkButton(
             panel,
             text="Apply Preprocessing",
             command=self.apply_preprocessing,
-            font=("Segoe UI", 13, "bold"),
-            fg_color="#10B981",
-            hover_color="#059669",
-            height=40
+            font=("Segoe UI", 14, "bold"),
+            fg_color="#059669",
+            hover_color="#047857",
+            height=46,
+            corner_radius=8
         )
-        self.apply_btn.pack(fill="x", pady=(15, 0))
+        self.apply_btn.pack(fill="x", pady=(20, 0))
         
         return panel
 
     def create_preprocess_section(self, parent, title, options):
-        section = ctk.CTkFrame(parent, fg_color="white", corner_radius=8, border_width=1, border_color="#E2E8F0")
-        section.pack(fill="x", pady=5)
+        section = ctk.CTkFrame(parent, fg_color="white", corner_radius=10, border_width=1, border_color="#E5E7EB")
+        section.pack(fill="x", pady=(0, 12))
         
-        header = ctk.CTkFrame(section, fg_color="transparent")
-        header.pack(fill="x", padx=15, pady=(10, 5))
-        
-        ctk.CTkLabel(
-            header,
+        # Title with better padding
+        title_label = ctk.CTkLabel(
+            section,
             text=title,
             font=("Segoe UI", 13, "bold"),
-            text_color="#0F172A"
-        ).pack(side="left")
+            text_color="#374151",
+            anchor="w"
+        )
+        title_label.pack(fill="x", padx=16, pady=(14, 10))
         
-        # Dropdown instead of radio buttons
+        # Dropdown
         var = ctk.StringVar(value=options[0])
         dropdown = ctk.CTkOptionMenu(
             section,
             values=options,
             variable=var,
-            fg_color="#2D5BFF",
-            button_color="#2D5BFF",
-            button_hover_color="#1E40AF",
+            fg_color="#2563EB",
+            button_color="#2563EB",
+            button_hover_color="#1D4ED8",
             dropdown_fg_color="white",
-            dropdown_hover_color="#F1F5F9",
-            dropdown_text_color="#1E293B",
+            dropdown_hover_color="#F3F4F6",
+            dropdown_text_color="#111827",
             font=("Segoe UI", 12),
-            width=200
+            height=36,
+            corner_radius=6,
+            anchor="w"
         )
-        dropdown.pack(padx=15, pady=(0, 10), anchor="w")
+        dropdown.pack(fill="x", padx=16, pady=(0, 14))
         
-        # Store reference
         self.preprocessing_options[title] = var
 
     def create_right_panel(self, parent):
         panel = ctk.CTkFrame(parent, fg_color="transparent")
         
-        # Summary
-        ctk.CTkLabel(
+        # Summary Header
+        summary_label = ctk.CTkLabel(
             panel,
-            text="Exploration Summary",
-            font=("Segoe UI", 15, "bold"),
-            text_color="#0F172A",
+            text="Dataset Overview",
+            font=("Segoe UI", 16, "bold"),
+            text_color="#111827",
             anchor="w"
-        ).pack(fill="x", pady=(0, 10))
+        )
+        summary_label.pack(fill="x", pady=(0, 16))
         
-        # Stats
+        # Stats with improved cards
         stats_frame = ctk.CTkFrame(panel, fg_color="transparent")
-        stats_frame.pack(fill="x", pady=(0, 20))
+        stats_frame.pack(fill="x", pady=(0, 30))
         
         self.rows_card = self.create_stat_card(stats_frame, "Rows & Columns", "0, 0")
-        self.rows_card.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.rows_card.pack(side="left", fill="x", expand=True, padx=(0, 8))
         
         self.missing_card = self.create_stat_card(stats_frame, "Missing Values", "0")
-        self.missing_card.pack(side="left", fill="x", expand=True, padx=5)
+        self.missing_card.pack(side="left", fill="x", expand=True, padx=(8, 8))
         
         self.duplicates_card = self.create_stat_card(stats_frame, "Duplicate Rows", "0")
-        self.duplicates_card.pack(side="left", fill="x", expand=True, padx=(5, 0))
+        self.duplicates_card.pack(side="left", fill="x", expand=True, padx=(8, 0))
         
-        # Preview
-        ctk.CTkLabel(
+        # Preview Header
+        preview_label = ctk.CTkLabel(
             panel,
             text="Data Preview",
-            font=("Segoe UI", 15, "bold"),
-            text_color="#0F172A",
+            font=("Segoe UI", 16, "bold"),
+            text_color="#111827",
             anchor="w"
-        ).pack(fill="x", pady=(0, 10))
+        )
+        preview_label.pack(fill="x", pady=(0, 16))
         
-        # Container for table with fixed height
-        table_container = ctk.CTkFrame(panel, fg_color="transparent", height=300)
-        table_container.pack(fill="both", expand=True, pady=(0, 20))
-        table_container.pack_propagate(False)  # Prevent container from shrinking
+        # Table with better height
+        table_container = ctk.CTkFrame(panel, fg_color="transparent", height=320)
+        table_container.pack(fill="both", expand=True, pady=(0, 30))
+        table_container.pack_propagate(False)
         
         self.table_frame = TableFrame(table_container)
         self.table_frame.pack(fill="both", expand=True)
         
         # Applied Steps
-        ctk.CTkLabel(
+        steps_header = ctk.CTkLabel(
             panel,
             text="Applied Steps",
-            font=("Segoe UI", 15, "bold"),
-            text_color="#0F172A",
+            font=("Segoe UI", 16, "bold"),
+            text_color="#111827",
             anchor="w"
-        ).pack(fill="x", pady=(0, 10))
+        )
+        steps_header.pack(fill="x", pady=(0, 16))
         
         self.steps_label = ctk.CTkLabel(
             panel,
             text="No data loaded yet.",
             fg_color="#FEF3C7",
             text_color="#92400E",
-            corner_radius=6,
-            padx=15,
-            pady=10,
-            anchor="w"
+            corner_radius=8,
+            padx=18,
+            pady=14,
+            anchor="w",
+            font=("Segoe UI", 12)
         )
         self.steps_label.pack(fill="x")
         
         return panel
 
     def create_stat_card(self, parent, title, value):
-        card = ctk.CTkFrame(parent, fg_color="white", corner_radius=8, border_width=1, border_color="#E2E8F0")
+        card = ctk.CTkFrame(parent, fg_color="white", corner_radius=10, border_width=1, border_color="#E5E7EB")
+        
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="both", expand=True, padx=18, pady=16)
         
         ctk.CTkLabel(
-            card,
+            inner,
             text=title,
-            text_color="#64748B",
-            font=("Segoe UI", 12)
-        ).pack(padx=15, pady=(15, 5), anchor="w")
+            text_color="#6B7280",
+            font=("Segoe UI", 12),
+            anchor="w"
+        ).pack(anchor="w", pady=(0, 6))
         
         val_label = ctk.CTkLabel(
-            card,
+            inner,
             text=value,
-            text_color="#0F172A",
-            font=("Segoe UI", 24, "bold")
+            text_color="#111827",
+            font=("Segoe UI", 26, "bold"),
+            anchor="w"
         )
-        val_label.pack(padx=15, pady=(0, 15), anchor="w")
+        val_label.pack(anchor="w")
         
         card.value_label = val_label
         return card
 
     def load_file(self, file_path):
-        # Show loading indicator
-        self.drop_zone.configure(fg_color="#EFF6FF")
+        self.drop_zone.configure(fg_color="#EFF6FF", border_color="#BFDBFE")
         self.drop_zone.browse_btn.configure(state="disabled", text="Loading...")
         
-        # Load in thread
         thread = threading.Thread(target=self._load_file_thread, args=(file_path,))
         thread.daemon = True
         thread.start()
@@ -417,35 +448,31 @@ class DataLoaderPage(ctk.CTkFrame):
             elif file_path.endswith('.json'):
                 df = pd.read_json(file_path)
             
-            # Update on main thread
             self.after(0, lambda: self._finish_load(df, file_path))
         except Exception as e:
             self.after(0, lambda err=str(e): self._handle_load_error(err))
     
     def _finish_load(self, df, file_path):
-        self.drop_zone.configure(fg_color="white")
+        self.drop_zone.configure(fg_color="#FAFAFA", border_color="#D1D5DB")
         self.drop_zone.browse_btn.configure(state="normal", text="Browse Files")
         
-        # Update app state
         self.app.set_dataframe(df, file_path)
         self.update_ui(df, file_path)
     
     def _handle_load_error(self, error_msg):
-        self.drop_zone.configure(fg_color="white")
+        self.drop_zone.configure(fg_color="#FAFAFA", border_color="#D1D5DB")
         self.drop_zone.browse_btn.configure(state="normal", text="Browse Files")
         messagebox.showerror("Load Error", f"Error loading file: {error_msg}")
 
     def update_ui(self, df, file_path):
         if df is None: return
         
-        # Update File Label
         filename = os.path.basename(file_path)
         self.file_label.configure(text=f"📄  {filename}")
         
         self.drop_zone.pack_forget()
         self.file_widget.pack(fill="x")
         
-        # Update Stats
         rows, cols = df.shape
         missing = df.isnull().sum().sum()
         duplicates = df.duplicated().sum()
@@ -454,14 +481,12 @@ class DataLoaderPage(ctk.CTkFrame):
         self.missing_card.value_label.configure(text=str(missing))
         self.duplicates_card.value_label.configure(text=str(duplicates))
         
-        # Update Table
         self.table_frame.populate_table(df)
         
-        # Update Steps
         self.steps_label.configure(
             text=f"✓  Loaded '{filename}' successfully.",
-            fg_color="#F0FDF4",
-            text_color="#16A34A"
+            fg_color="#ECFDF5",
+            text_color="#059669"
         )
 
     def clear_file(self):
@@ -469,12 +494,10 @@ class DataLoaderPage(ctk.CTkFrame):
         self.file_widget.pack_forget()
         self.drop_zone.pack(fill="x")
         
-        # Reset stats
         self.rows_card.value_label.configure(text="0, 0")
         self.missing_card.value_label.configure(text="0")
         self.duplicates_card.value_label.configure(text="0")
         
-        # Re-populating initial table
         self.table_frame.populate_initial()
         
         self.steps_label.configure(
@@ -489,17 +512,14 @@ class DataLoaderPage(ctk.CTkFrame):
             messagebox.showwarning("No Data", "Please load a dataset first.")
             return
         
-        # Show progress
-        self.preprocess_progress.pack(fill="x", pady=(15, 5))
+        self.preprocess_progress.pack(fill="x", pady=(20, 8))
         self.preprocess_progress.start()
         self.preprocess_status.configure(text="Applying preprocessing...")
-        self.preprocess_status.pack(fill="x", pady=(0, 10))
+        self.preprocess_status.pack(fill="x", pady=(0, 12))
         self.apply_btn.configure(state="disabled", text="Processing...")
         
-        # Get options
         options = {key: var.get() for key, var in self.preprocessing_options.items()}
         
-        # Run in thread
         thread = threading.Thread(target=self._apply_preprocessing_thread, args=(df.copy(), options))
         thread.daemon = True
         thread.start()
@@ -620,13 +640,9 @@ class DataLoaderPage(ctk.CTkFrame):
         self.after(2000, lambda: self.preprocess_status.pack_forget())
         self.apply_btn.configure(state="normal", text="Apply Preprocessing")
         
-        # Update the dataframe in app
         self.app.set_dataframe(df_processed, self.app.file_path)
-        
-        # Update UI
         self.update_ui(df_processed, self.app.file_path)
         
-        # Show success message
         if steps_applied:
             steps_text = "✓  " + "\n✓  ".join(steps_applied)
             self.steps_label.configure(text=steps_text)

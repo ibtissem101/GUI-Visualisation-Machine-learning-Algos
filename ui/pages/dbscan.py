@@ -159,7 +159,7 @@ class DBSCANPage(ctk.CTkFrame):
         if self.canvas:
             self.canvas.get_tk_widget().destroy()
             
-        fig = Figure(figsize=(8, 6), dpi=100, facecolor='white')
+        fig = Figure(figsize=(6, 4.5), dpi=100, facecolor='white')
         ax = fig.add_subplot(111)
         ax.text(0.5, 0.5, 'Load data and run clustering\nto see results', 
                 horizontalalignment='center', verticalalignment='center',
@@ -174,7 +174,7 @@ class DBSCANPage(ctk.CTkFrame):
         
         self.canvas = FigureCanvasTkAgg(fig, master=self.viz_panel)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=15, pady=15)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
 
     def run_dbscan(self):
         if self.is_running:
@@ -223,11 +223,19 @@ class DBSCANPage(ctk.CTkFrame):
             X = numeric_df.iloc[:, :2].values
             feature_names = numeric_df.columns[:2]
             
-            db = DBSCAN(eps=eps, min_samples=min_samples)
-            labels = db.fit_predict(X)
+            # Sample if large
+            if len(X) > 5000:
+                sample_idx = np.random.choice(len(X), 5000, replace=False)
+                X_sample = X[sample_idx]
+            else:
+                X_sample = X
+            
+            # DBSCAN with parallel processing
+            db = DBSCAN(eps=eps, min_samples=min_samples, n_jobs=-1)
+            labels = db.fit_predict(X_sample)
             
             self.after(0, lambda: self._finish_dbscan(
-                X.copy(), 
+                X_sample.copy(), 
                 labels.copy(), 
                 list(feature_names)
             ))
@@ -256,10 +264,9 @@ class DBSCANPage(ctk.CTkFrame):
         if self.canvas:
             self.canvas.get_tk_widget().destroy()
             
-        fig = Figure(figsize=(8, 6), dpi=100, facecolor='white')
+        fig = Figure(figsize=(6, 4.5), dpi=100, facecolor='white')
         ax = fig.add_subplot(111)
         
-        # Create scatter plot with noise points highlighted
         unique_labels = set(labels)
         n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
         n_noise = list(labels).count(-1)
@@ -267,23 +274,23 @@ class DBSCANPage(ctk.CTkFrame):
         # Plot noise points
         if -1 in unique_labels:
             noise_mask = labels == -1
-            ax.scatter(X[noise_mask, 0], X[noise_mask, 1], c='gray', marker='x', s=30, alpha=0.5, label='Noise')
+            ax.scatter(X[noise_mask, 0], X[noise_mask, 1], c='gray', marker='x', s=20, alpha=0.5, label='Noise')
         
         # Plot cluster points
         cluster_mask = labels != -1
         if cluster_mask.any():
             scatter = ax.scatter(X[cluster_mask, 0], X[cluster_mask, 1], c=labels[cluster_mask], 
-                               cmap='viridis', alpha=0.6, s=50, edgecolors='white', linewidth=0.5)
+                               cmap='viridis', alpha=0.6, s=30, edgecolors='white', linewidth=0.5)
         
-        ax.set_xlabel(feature_names[0], fontsize=11, fontweight='bold')
-        ax.set_ylabel(feature_names[1], fontsize=11, fontweight='bold')
-        ax.set_title(f'DBSCAN (Clusters: {n_clusters}, Noise: {n_noise})', fontsize=13, fontweight='bold', pad=15)
-        ax.legend(frameon=True, shadow=True)
+        ax.set_xlabel(feature_names[0], fontsize=10, fontweight='bold')
+        ax.set_ylabel(feature_names[1], fontsize=10, fontweight='bold')
+        ax.set_title(f'DBSCAN (Clusters: {n_clusters}, Noise: {n_noise})', fontsize=12, fontweight='bold', pad=10)
+        ax.legend(frameon=True, shadow=True, fontsize=9)
         ax.grid(True, alpha=0.2, linestyle='--')
         ax.set_facecolor('#FAFAFA')
         
-        fig.tight_layout()
+        fig.tight_layout(pad=1.5)
         
         self.canvas = FigureCanvasTkAgg(fig, master=self.viz_panel)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=15, pady=15)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
