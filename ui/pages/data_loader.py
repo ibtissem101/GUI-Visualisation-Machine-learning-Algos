@@ -70,6 +70,7 @@ class TableFrame(ctk.CTkFrame):
     def __init__(self, master, df=None):
         super().__init__(master, fg_color="white", corner_radius=12, border_width=1, border_color="#E5E7EB")
         self.df = df
+        self._widgets = []  # Cache for reusable widgets
         
         # Create canvas and scrollbars
         self.canvas = tk.Canvas(self, bg="white", highlightthickness=0)
@@ -96,8 +97,10 @@ class TableFrame(ctk.CTkFrame):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
         
-        # Mouse wheel binding
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        # Mouse wheel binding - bind only to this canvas, not all
+        self.canvas.bind("<MouseWheel>", self._on_mousewheel)
+        self.canvas.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", self._on_mousewheel))
+        self.canvas.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
         
         if df is not None:
             self.populate_table(df)
@@ -118,9 +121,13 @@ class TableFrame(ctk.CTkFrame):
         self.create_table_grid(columns, data)
 
     def populate_table(self, df):
-        limit = 100
-        df_head = df.head(limit)
-        columns = [str(c).upper() for c in df.columns]
+        # Limit rows and columns for performance
+        limit_rows = 50
+        limit_cols = 10
+        df_head = df.head(limit_rows)
+        if df_head.shape[1] > limit_cols:
+            df_head = df_head.iloc[:, :limit_cols]
+        columns = [str(c).upper()[:20] for c in df_head.columns]  # Truncate column names
         data = df_head.astype(str).values.tolist()
         self.create_table_grid(columns, data)
 
@@ -133,31 +140,32 @@ class TableFrame(ctk.CTkFrame):
             label = ctk.CTkLabel(
                 self.scrollable_frame, 
                 text=col, 
-                font=("Segoe UI", 12, "bold"), 
+                font=("Segoe UI", 11, "bold"), 
                 text_color="#374151",
                 fg_color="#F9FAFB",
-                padx=16,
-                pady=12,
+                padx=10,
+                pady=8,
                 anchor="w",
-                width=140
+                width=100
             )
             label.grid(row=0, column=i, sticky="ew", padx=(0, 1), pady=(0, 1))
             
-        # Data
+        # Data - batch create for performance
         for r, row in enumerate(data):
             for c, val in enumerate(row):
                 if val == "nan": val = ""
+                val = val[:25] + "..." if len(val) > 25 else val  # Truncate long values
                 bg = "white" if r % 2 == 0 else "#FAFAFA"
                 label = ctk.CTkLabel(
                     self.scrollable_frame,
                     text=val,
-                    font=("Segoe UI", 12),
+                    font=("Segoe UI", 11),
                     text_color="#4B5563",
                     fg_color=bg,
-                    padx=16,
-                    pady=10,
+                    padx=10,
+                    pady=6,
                     anchor="w",
-                    width=140
+                    width=100
                 )
                 label.grid(row=r+1, column=c, sticky="ew", padx=(0, 1), pady=(0, 1))
 
@@ -167,6 +175,15 @@ class DataLoaderPage(ctk.CTkFrame):
         self.app = app_instance
         self.preprocessing_options = {}
         self.setup_ui()
+        
+        # Restore state if data already loaded
+        self.after(100, self._restore_state)
+    
+    def _restore_state(self):
+        """Restore UI state if data was previously loaded"""
+        df = self.app.get_dataframe()
+        if df is not None and self.app.file_path:
+            self.update_ui(df, self.app.file_path)
         
     def setup_ui(self):
         # Header with better spacing
@@ -246,79 +263,84 @@ class DataLoaderPage(ctk.CTkFrame):
         )
         close_btn.pack(side="right")
         
+        # Scrollable preprocessing section
+        preprocess_scroll = ctk.CTkScrollableFrame(panel, fg_color="transparent", height=250)
+        preprocess_scroll.pack(fill="both", expand=True, pady=(0, 0))
+        
         # Section Header
         section_header = ctk.CTkLabel(
-            panel,
+            preprocess_scroll,
             text="Preprocessing Options",
-            font=("Segoe UI", 16, "bold"),
+            font=("Segoe UI", 14, "bold"),
             text_color="#111827",
             anchor="w"
         )
-        section_header.pack(fill="x", pady=(0, 16))
+        section_header.pack(fill="x", pady=(0, 8))
         
-        # Create preprocessing sections with better spacing
-        self.create_preprocess_section(panel, "Missing Values", 
-            ["None", "Remove Rows", "Fill with Mean", "Fill with Median", "Fill with Mode", "Forward Fill", "Backward Fill"])
+        # Create compact preprocessing sections
+        self.create_preprocess_section(preprocess_scroll, "Missing Values", 
+            ["None", "Remove Rows", "Mean", "Median", "Mode", "Forward", "Backward"])
         
-        self.create_preprocess_section(panel, "Duplicates", 
+        self.create_preprocess_section(preprocess_scroll, "Duplicates", 
             ["None", "Remove All", "Keep First", "Keep Last"])
         
-        self.create_preprocess_section(panel, "Normalization", 
-            ["None", "Min-Max (0-1)", "Z-Score", "Robust Scaler"])
+        self.create_preprocess_section(preprocess_scroll, "Normalization", 
+            ["None", "Min-Max", "Z-Score", "Robust"])
         
-        self.create_preprocess_section(panel, "Outlier Handling", 
-            ["None", "Remove IQR", "Cap IQR", "Remove Z-Score (>3)"])
+        self.create_preprocess_section(preprocess_scroll, "Outliers", 
+            ["None", "Remove IQR", "Cap IQR", "Z-Score >3"])
         
-        self.create_preprocess_section(panel, "Encoding", 
-            ["None", "One-Hot", "Label Encoding", "Target Encoding"])
+        self.create_preprocess_section(preprocess_scroll, "Encoding", 
+            ["None", "One-Hot", "Label"])
         
-        # Progress bar
-        self.preprocess_progress = ctk.CTkProgressBar(panel, mode="indeterminate", height=6)
-        self.preprocess_progress.pack(fill="x", pady=(20, 8))
-        self.preprocess_progress.pack_forget()
+        # Progress bar (outside scroll)
+        self.preprocess_progress = ctk.CTkProgressBar(panel, mode="indeterminate", height=4)
         
         self.preprocess_status = ctk.CTkLabel(
             panel,
             text="",
             text_color="#6B7280",
-            font=("Segoe UI", 12)
+            font=("Segoe UI", 11)
         )
-        self.preprocess_status.pack(fill="x", pady=(0, 12))
-        self.preprocess_status.pack_forget()
         
-        # Apply Button with better prominence
+        # Apply Button - always visible at bottom
         self.apply_btn = ctk.CTkButton(
             panel,
             text="Apply Preprocessing",
             command=self.apply_preprocessing,
-            font=("Segoe UI", 14, "bold"),
+            font=("Segoe UI", 13, "bold"),
             fg_color="#059669",
             hover_color="#047857",
-            height=46,
+            height=40,
             corner_radius=8
         )
-        self.apply_btn.pack(fill="x", pady=(20, 0))
+        self.apply_btn.pack(fill="x", pady=(8, 0))
         
         return panel
 
     def create_preprocess_section(self, parent, title, options):
-        section = ctk.CTkFrame(parent, fg_color="white", corner_radius=10, border_width=1, border_color="#E5E7EB")
-        section.pack(fill="x", pady=(0, 12))
+        # Compact inline section
+        section = ctk.CTkFrame(parent, fg_color="white", corner_radius=6, border_width=1, border_color="#E5E7EB")
+        section.pack(fill="x", pady=(0, 6))
         
-        # Title with better padding
+        inner = ctk.CTkFrame(section, fg_color="transparent")
+        inner.pack(fill="x", padx=10, pady=8)
+        
+        # Title on left
         title_label = ctk.CTkLabel(
-            section,
+            inner,
             text=title,
-            font=("Segoe UI", 13, "bold"),
+            font=("Segoe UI", 11, "bold"),
             text_color="#374151",
-            anchor="w"
+            anchor="w",
+            width=90
         )
-        title_label.pack(fill="x", padx=16, pady=(14, 10))
+        title_label.pack(side="left")
         
-        # Dropdown
+        # Dropdown on right
         var = ctk.StringVar(value=options[0])
         dropdown = ctk.CTkOptionMenu(
-            section,
+            inner,
             values=options,
             variable=var,
             fg_color="#2563EB",
@@ -327,12 +349,13 @@ class DataLoaderPage(ctk.CTkFrame):
             dropdown_fg_color="white",
             dropdown_hover_color="#F3F4F6",
             dropdown_text_color="#111827",
-            font=("Segoe UI", 12),
-            height=36,
-            corner_radius=6,
+            font=("Segoe UI", 11),
+            height=28,
+            width=120,
+            corner_radius=4,
             anchor="w"
         )
-        dropdown.pack(fill="x", padx=16, pady=(0, 14))
+        dropdown.pack(side="right", fill="x", expand=True)
         
         self.preprocessing_options[title] = var
 
@@ -512,10 +535,10 @@ class DataLoaderPage(ctk.CTkFrame):
             messagebox.showwarning("No Data", "Please load a dataset first.")
             return
         
-        self.preprocess_progress.pack(fill="x", pady=(20, 8))
+        self.preprocess_progress.pack(fill="x", pady=(4, 4))
         self.preprocess_progress.start()
         self.preprocess_status.configure(text="Applying preprocessing...")
-        self.preprocess_status.pack(fill="x", pady=(0, 12))
+        self.preprocess_status.pack(fill="x", pady=(0, 4))
         self.apply_btn.configure(state="disabled", text="Processing...")
         
         options = {key: var.get() for key, var in self.preprocessing_options.items()}
@@ -535,20 +558,20 @@ class DataLoaderPage(ctk.CTkFrame):
                 if missing_method == "Remove Rows":
                     df_processed = df_processed.dropna()
                     steps_applied.append(f"Removed rows with missing values")
-                elif missing_method == "Fill with Mean":
+                elif missing_method in ["Fill with Mean", "Mean"]:
                     df_processed = df_processed.fillna(df_processed.mean(numeric_only=True))
                     steps_applied.append(f"Filled missing values with mean")
-                elif missing_method == "Fill with Median":
+                elif missing_method in ["Fill with Median", "Median"]:
                     df_processed = df_processed.fillna(df_processed.median(numeric_only=True))
                     steps_applied.append(f"Filled missing values with median")
-                elif missing_method == "Fill with Mode":
+                elif missing_method in ["Fill with Mode", "Mode"]:
                     df_processed = df_processed.fillna(df_processed.mode().iloc[0])
                     steps_applied.append(f"Filled missing values with mode")
-                elif missing_method == "Forward Fill":
-                    df_processed = df_processed.fillna(method='ffill')
+                elif missing_method in ["Forward Fill", "Forward"]:
+                    df_processed = df_processed.ffill()
                     steps_applied.append(f"Forward filled missing values")
-                elif missing_method == "Backward Fill":
-                    df_processed = df_processed.fillna(method='bfill')
+                elif missing_method in ["Backward Fill", "Backward"]:
+                    df_processed = df_processed.bfill()
                     steps_applied.append(f"Backward filled missing values")
             
             # Duplicates
@@ -569,7 +592,7 @@ class DataLoaderPage(ctk.CTkFrame):
             if norm_method != "None":
                 numeric_cols = df_processed.select_dtypes(include=[np.number]).columns
                 if len(numeric_cols) > 0:
-                    if norm_method == "Min-Max (0-1)":
+                    if norm_method in ["Min-Max (0-1)", "Min-Max"]:
                         from sklearn.preprocessing import MinMaxScaler
                         scaler = MinMaxScaler()
                         df_processed[numeric_cols] = scaler.fit_transform(df_processed[numeric_cols])
@@ -579,14 +602,14 @@ class DataLoaderPage(ctk.CTkFrame):
                         scaler = StandardScaler()
                         df_processed[numeric_cols] = scaler.fit_transform(df_processed[numeric_cols])
                         steps_applied.append(f"Applied Z-Score normalization")
-                    elif norm_method == "Robust Scaler":
+                    elif norm_method in ["Robust Scaler", "Robust"]:
                         from sklearn.preprocessing import RobustScaler
                         scaler = RobustScaler()
                         df_processed[numeric_cols] = scaler.fit_transform(df_processed[numeric_cols])
                         steps_applied.append(f"Applied Robust scaling")
             
             # Outlier Handling
-            outlier_method = self.preprocessing_options["Outlier Handling"].get()
+            outlier_method = self.preprocessing_options.get("Outliers", self.preprocessing_options.get("Outlier Handling", ctk.StringVar(value="None"))).get()
             if outlier_method != "None":
                 numeric_cols = df_processed.select_dtypes(include=[np.number]).columns
                 if len(numeric_cols) > 0:
@@ -607,7 +630,7 @@ class DataLoaderPage(ctk.CTkFrame):
                             upper = Q3 + 1.5*IQR
                             df_processed[col] = df_processed[col].clip(lower, upper)
                         steps_applied.append(f"Capped outliers using IQR method")
-                    elif outlier_method == "Remove Z-Score (>3)":
+                    elif outlier_method in ["Remove Z-Score (>3)", "Z-Score >3"]:
                         from scipy import stats
                         for col in numeric_cols:
                             z_scores = np.abs(stats.zscore(df_processed[col].dropna()))
@@ -622,7 +645,7 @@ class DataLoaderPage(ctk.CTkFrame):
                     if encoding_method == "One-Hot":
                         df_processed = pd.get_dummies(df_processed, columns=cat_cols)
                         steps_applied.append(f"Applied One-Hot encoding")
-                    elif encoding_method == "Label Encoding":
+                    elif encoding_method in ["Label Encoding", "Label"]:
                         from sklearn.preprocessing import LabelEncoder
                         le = LabelEncoder()
                         for col in cat_cols:
