@@ -200,15 +200,27 @@ class HierarchicalPage(ctk.CTkFrame):
         
         self.dendro_btn = ctk.CTkButton(
             viz_controls,
-            text="🌳 Show Dendrogram",
+            text="🌳 Dendrogram",
             command=self.show_dendrogram,
             font=("Segoe UI", 12, "bold"),
             fg_color="#64748B",
             hover_color="#475569",
             height=36,
-            width=180
+            width=130
         )
         self.dendro_btn.pack(side="left")
+        
+        self.cluster_btn = ctk.CTkButton(
+            viz_controls,
+            text="🎯 Show Clusters",
+            command=self.show_clusters,
+            font=("Segoe UI", 12, "bold"),
+            fg_color="#2563EB",
+            hover_color="#1D4ED8",
+            height=36,
+            width=140
+        )
+        self.cluster_btn.pack(side="left", padx=(10, 0))
         
         self.pca_label = ctk.CTkLabel(
             viz_controls, text="", font=("Segoe UI", 11), text_color="#64748B"
@@ -555,3 +567,9 @@ class HierarchicalPage(ctk.CTkFrame):
         self.canvas = FigureCanvasTkAgg(fig, master=self.plot_container)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def show_clusters(self):
+        """Re-run clustering and show the cluster visualization"""
+        if self.is_running:
+            return
+        self.run_clustering()

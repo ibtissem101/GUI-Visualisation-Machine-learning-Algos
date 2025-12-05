@@ -207,15 +207,27 @@ class KMeansPage(ctk.CTkFrame):
         
         self.elbow_btn = ctk.CTkButton(
             viz_controls,
-            text="📊 Show Elbow Method",
+            text="📊 Elbow Method",
             command=self.show_elbow,
             font=("Segoe UI", 12, "bold"),
             fg_color="#64748B",
             hover_color="#475569",
             height=36,
-            width=180
+            width=140
         )
         self.elbow_btn.pack(side="left")
+        
+        self.cluster_btn = ctk.CTkButton(
+            viz_controls,
+            text="🎯 Show Clusters",
+            command=self.show_clusters,
+            font=("Segoe UI", 12, "bold"),
+            fg_color="#2563EB",
+            hover_color="#1D4ED8",
+            height=36,
+            width=140
+        )
+        self.cluster_btn.pack(side="left", padx=(10, 0))
         
         # PCA info label
         self.pca_label = ctk.CTkLabel(
@@ -601,3 +613,9 @@ class KMeansPage(ctk.CTkFrame):
         # Auto-switch to Visualization view
         self.view_var.set("Visualization")
         self.switch_view("Visualization")
+
+    def show_clusters(self):
+        """Re-run clustering and show the cluster visualization"""
+        if self.is_running:
+            return
+        self.run_kmeans()
