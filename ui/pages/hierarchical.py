@@ -402,7 +402,7 @@ class HierarchicalPage(ctk.CTkFrame):
                 viz_labels = [f"PC1 ({pca.explained_variance_ratio_[0]*100:.1f}%)", 
                              f"PC2 ({pca.explained_variance_ratio_[1]*100:.1f}%)"]
             else:
-                X_viz = X_sample
+                X_viz = X_scaled
                 explained_var = None
                 viz_labels = selected_features[:2]
             
